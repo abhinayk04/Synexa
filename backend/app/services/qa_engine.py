@@ -1,4 +1,5 @@
 import logging
+import re
 import requests
 from app.config import settings
 from langchain_core.language_models.llms import LLM
@@ -8,36 +9,49 @@ logger = logging.getLogger(__name__)
 
 class SmartExtractiveLLM(LLM):
     """
-    Intelligent Extractive Fallback LLM.
-    Used when local Ollama is offline or not installed on the machine.
-    Extracts high-precision answers directly from document context.
+    Intelligent Extractive RAG Reader.
+    Used when local Ollama is offline.
+    Extracts facts and formats them into clean markdown bullet points and headings.
     """
     @property
     def _llm_type(self) -> str:
         return "smart_extractive_fallback"
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
-        # Parse context from prompt
         if "Context:" in prompt and "Question:" in prompt:
             try:
                 context_part = prompt.split("Context:")[1].split("Question:")[0].strip()
-                question_part = prompt.split("Question:")[1].split("\n")[0].strip()
                 
                 if not context_part:
                     return "Information not found in documents."
                 
-                # Split context into clean passages
-                passages = [p.strip() for p in context_part.split("---") if p.strip()]
+                # Fix line-break hyphens (e.g. "Trans- formers" -> "Transformers")
+                clean_context = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', context_part)
+                clean_context = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', clean_context)
+                
+                passages = [p.strip() for p in clean_context.split("---") if p.strip()]
                 if not passages:
-                    passages = [context_part]
+                    passages = [clean_context]
 
-                # Return top relevant passage cleanly
                 top_text = passages[0]
-                lines = [line.strip() for line in top_text.split("\n") if line.strip()]
-                extracted = " ".join(lines[:4])
-                return f"{extracted}"
-            except Exception:
-                pass
+                raw_lines = [line.strip() for line in top_text.split("\n") if line.strip()]
+                
+                formatted_bullets = []
+                for line in raw_lines[:10]:
+                    if ":" in line and not line.startswith("-") and not line.startswith("•"):
+                        parts = line.split(":", 1)
+                        formatted_bullets.append(f"**{parts[0].strip()}:** {parts[1].strip()}")
+                    elif line.startswith("- ") or line.startswith("* ") or line.startswith("• "):
+                        formatted_bullets.append(line)
+                    elif len(line) > 10:
+                        formatted_bullets.append(f"• {line}")
+
+                if formatted_bullets:
+                    return "\n\n".join(formatted_bullets)
+                
+                return "\n\n".join([f"• {l}" for l in raw_lines[:5]])
+            except Exception as e:
+                logger.warning(f"[SmartExtractiveLLM] Formatting error: {e}")
 
         return "Information not found in documents."
 
@@ -66,7 +80,6 @@ def get_llm():
         )
 
     elif provider == "ollama":
-        # Check if local Ollama server is reachable on port 11434
         try:
             res = requests.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=1.5)
             if res.status_code == 200:
@@ -87,7 +100,6 @@ def get_llm():
         except Exception as e:
             logger.warning(f"[LLM] Local Ollama server offline at {settings.OLLAMA_BASE_URL} ({e}). Falling back to Smart Extractive RAG.")
 
-        # Fallback to Smart Extractive LLM if Ollama is not running
         _llm_instance = SmartExtractiveLLM()
 
     elif provider == "huggingface":

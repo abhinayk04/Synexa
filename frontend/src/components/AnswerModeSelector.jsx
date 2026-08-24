@@ -1,12 +1,11 @@
 import { motion } from 'framer-motion'
-import { Zap, BookOpen, GraduationCap, Sparkles } from 'lucide-react'
+import { Zap, BookOpen, FileText } from 'lucide-react'
 import clsx from 'clsx'
 
 const MODES = [
-  { id: 'simple',   label: 'Concise',   icon: Zap,           desc: 'Quick, direct factual answer' },
-  { id: 'detailed', label: 'Detailed',  icon: BookOpen,       desc: 'Comprehensive multi-paragraph explanation' },
-  { id: 'exam',     label: 'Exam Prep', icon: GraduationCap, desc: 'Academic format: Definition, Details & Examples' },
-  { id: 'summary',  label: 'Summary',   icon: Sparkles,      desc: 'Executive summary & top key takeaways' },
+  { id: 'simple',   label: 'Auto',     icon: Zap,      desc: 'Smart balanced answer' },
+  { id: 'concise',  label: 'Concise',  icon: FileText, desc: 'Quick bulleted points' },
+  { id: 'detailed', label: 'Detailed', icon: BookOpen, desc: 'Comprehensive multi-paragraph explanation' },
 ]
 
 export default function AnswerModeSelector({ value, onChange }) {
