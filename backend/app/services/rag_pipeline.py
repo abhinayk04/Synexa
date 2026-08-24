@@ -147,15 +147,16 @@ async def run_rag_pipeline(
     resolved_chat_id = chat_id
 
     if chat_id:
-        from app.services.memory import get_chat
-        chat_doc = await get_chat(chat_id)
-        if not chat_doc:
-            raise ValueError(f"Chat '{chat_id}' not found.")
-
-        user_id = chat_doc["user_id"]
-        document_id = chat_doc["document_id"]
-    else:
-        document_id = resolve_document_id(user_id, document_id or "default")
+        try:
+            from app.services.memory import get_chat
+            chat_doc = await get_chat(chat_id)
+            if chat_doc:
+                user_id = chat_doc.get("user_id", user_id)
+                document_id = chat_doc.get("document_id", document_id)
+        except Exception as e:
+            logger.warning(f"[RAG] get_chat lookup warning for '{chat_id}': {e}")
+    
+    document_id = resolve_document_id(user_id, document_id or "default")
 
     history_str = await _load_history_for_chat(resolved_chat_id) if resolved_chat_id else ""
 
