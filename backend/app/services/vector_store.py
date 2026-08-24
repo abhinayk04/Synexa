@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
@@ -21,40 +21,35 @@ def _doc_path(user_id: str, document_id: str) -> str:
     return path
 
 
-def _index_exists(user_id: str, document_id: str) -> bool:
-    return os.path.exists(
-        os.path.join(settings.VECTORSTORE_DIR, user_id, document_id, "index.faiss")
-    )
+def find_document_index_path(user_id: str, document_id: str) -> Optional[str]:
+    """
+    Locates the exact FAISS index directory for document_id across user directories.
+    Strictly guarantees that querying document_id ONLY loads document_id's index.
+    """
+    if not document_id or document_id in ("default", "", None):
+        return None
 
+    # 1. Direct check in user_id directory
+    user_path = os.path.join(settings.VECTORSTORE_DIR, user_id, document_id)
+    if os.path.exists(os.path.join(user_path, "index.faiss")):
+        return user_path
 
-def _flat_index_exists() -> bool:
-    return os.path.exists(os.path.join(settings.VECTORSTORE_DIR, "index.faiss"))
+    # 2. Search all account directories in VECTORSTORE_DIR for document_id
+    if os.path.exists(settings.VECTORSTORE_DIR):
+        for root, dirs, files in os.walk(settings.VECTORSTORE_DIR):
+            if os.path.basename(root) == document_id and "index.faiss" in files:
+                return root
+
+    return None
 
 
 def resolve_document_id(user_id: str, document_id: str) -> str:
+    """Strict resolution: Returns document_id if found, never hijacks with a different document."""
     if document_id and document_id not in ("default", "", None):
-        if _index_exists(user_id, document_id):
+        if find_document_index_path(user_id, document_id):
             return document_id
 
-    user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
-    if os.path.isdir(user_dir):
-        candidates = []
-        for entry in os.scandir(user_dir):
-            if entry.is_dir():
-                faiss_file = os.path.join(entry.path, "index.faiss")
-                if os.path.exists(faiss_file):
-                    candidates.append((entry.name, os.path.getmtime(faiss_file)))
-        if candidates:
-            candidates.sort(key=lambda x: x[1], reverse=True)
-            resolved = candidates[0][0]
-            logger.info(f"[VS] Resolved '{document_id}' → '{resolved}' (user='{user_id}')")
-            return resolved
-
-    if _flat_index_exists():
-        logger.info("[VS] Using legacy flat index at vectorstore/index.faiss")
-        return "__flat__"
-
-    return document_id
+    return document_id or "default"
 
 
 def add_documents_to_vectorstore(
@@ -82,37 +77,25 @@ def load_vectorstore(
     user_id: str = "default",
     document_id: str = "default",
 ) -> FAISS:
-    document_id = resolve_document_id(user_id, document_id)
     cache_key = f"{user_id}::{document_id}"
 
     if cache_key in _vectorstore_cache:
-        logger.info(f"[VS Cache Hit] Returning in-memory FAISS index user='{user_id}' doc='{document_id}'")
+        logger.info(f"[VS Cache Hit] Returning in-memory FAISS index doc='{document_id}'")
         return _vectorstore_cache[cache_key]
 
-    if document_id == "__flat__":
-        embeddings = get_embedding_model()
-        store = FAISS.load_local(
-            settings.VECTORSTORE_DIR,
-            embeddings,
-            allow_dangerous_deserialization=True,
-        )
-        _vectorstore_cache[cache_key] = store
-        logger.info("[VS] Loaded legacy flat index into RAM cache")
-        return store
+    index_path = find_document_index_path(user_id, document_id)
 
-    if not _index_exists(user_id, document_id):
+    if not index_path:
         raise FileNotFoundError(
-            f"No index found for document '{document_id}' (user='{user_id}'). "
-            "Please upload a document first via POST /upload."
+            f"No index found for document '{document_id}' (user='{user_id}')."
         )
 
     embeddings = get_embedding_model()
-    path = _doc_path(user_id, document_id)
     store = FAISS.load_local(
-        path, embeddings, allow_dangerous_deserialization=True
+        index_path, embeddings, allow_dangerous_deserialization=True
     )
     _vectorstore_cache[cache_key] = store
-    logger.info(f"[VS Cache Miss] Loaded index into RAM user='{user_id}' doc='{document_id}'")
+    logger.info(f"[VS Cache Miss] Loaded index into RAM doc='{document_id}' from '{index_path}'")
     return store
 
 
@@ -129,7 +112,7 @@ def load_all_user_vectorstores(user_id: str = "default") -> List[Tuple[str, FAIS
         user_dir = os.path.join(settings.VECTORSTORE_DIR, uid)
         if os.path.isdir(user_dir):
             for entry in os.scandir(user_dir):
-                if entry.is_dir() and _index_exists(uid, entry.name):
+                if entry.is_dir() and os.path.exists(os.path.join(entry.path, "index.faiss")):
                     faiss_file = os.path.join(entry.path, "index.faiss")
                     if faiss_file not in seen_paths:
                         seen_paths.add(faiss_file)
@@ -139,13 +122,6 @@ def load_all_user_vectorstores(user_id: str = "default") -> List[Tuple[str, FAIS
                         except Exception as e:
                             logger.warning(f"[VS] Failed loading user index '{entry.name}': {e}")
 
-    if not stores and _flat_index_exists():
-        try:
-            store = load_vectorstore(user_id="default", document_id="__flat__")
-            stores.append(("__flat__", store))
-        except Exception:
-            pass
-
     return stores
 
 
@@ -154,9 +130,9 @@ def delete_document_index(user_id: str, document_id: str) -> bool:
     if cache_key in _vectorstore_cache:
         del _vectorstore_cache[cache_key]
 
-    path = os.path.join(settings.VECTORSTORE_DIR, user_id, document_id)
-    if os.path.exists(path):
-        shutil.rmtree(path)
-        logger.info(f"[VS] Deleted user='{user_id}' doc='{document_id}'")
+    index_path = find_document_index_path(user_id, document_id)
+    if index_path and os.path.exists(index_path):
+        shutil.rmtree(index_path)
+        logger.info(f"[VS] Deleted doc='{document_id}' from '{index_path}'")
         return True
     return False
