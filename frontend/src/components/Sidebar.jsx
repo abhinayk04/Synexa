@@ -116,7 +116,6 @@ export default function Sidebar() {
     navigate('/upload')
   }, [navigate])
 
-
   const handleFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -142,6 +141,8 @@ export default function Sidebar() {
   const filteredChats = chats.filter(c =>
     c.title.toLowerCase().includes(search.toLowerCase())
   )
+
+  const initialLetter = (displayName || 'User').charAt(0).toUpperCase()
 
   if (sidebarCollapsed) {
     return (
@@ -189,13 +190,13 @@ export default function Sidebar() {
 
         <button
           onClick={() => isLoggedIn ? setDrawerOpen(true) : navigate('/signup')}
-          title={isLoggedIn ? `Account (${displayName})` : 'Sign Up'}
+          title={isLoggedIn ? `Account (${displayName || 'User'})` : 'Sign Up'}
           className="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center
                      text-slate-500 hover:text-slate-300 transition-colors mt-auto">
           {isLoggedIn
             ? <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center
                                text-white text-[11px] font-bold">
-                {displayName[0].toUpperCase()}
+                {initialLetter}
               </div>
             : <UserCircle2 size={18} />}
         </button>
@@ -318,12 +319,12 @@ export default function Sidebar() {
             className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] cursor-pointer transition-all border border-transparent hover:border-white/[0.06]"
           >
             <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0">
-              {displayName ? displayName[0].toUpperCase() : 'U'}
+              {initialLetter}
             </div>
 
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-200 truncate">
-                {displayName}
+                {displayName || 'User'}
               </p>
               <p className="text-[10px] text-slate-500 truncate">
                 {user?.email || 'user@synexa.ai'}

@@ -84,6 +84,8 @@ export default function ChatBox() {
     }
   }
 
+  const initialLetter = (displayName || 'User').charAt(0).toUpperCase()
+
   return (
     <div className="flex flex-col h-full w-full bg-[#0F172A] overflow-hidden relative">
 
@@ -97,7 +99,7 @@ export default function ChatBox() {
             </h2>
             {activeDocument && (
               <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                {activeDocument.chunks} chunks indexed
+                {activeDocument.chunks || 0} chunks indexed
               </p>
             )}
           </div>
@@ -107,9 +109,9 @@ export default function ChatBox() {
           {isLoggedIn && (
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
               <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white text-[9px] font-bold">
-                {displayName[0].toUpperCase()}
+                {initialLetter}
               </div>
-              <span className="text-[11px] text-slate-400">{displayName}</span>
+              <span className="text-[11px] text-slate-400">{displayName || 'User'}</span>
             </div>
           )}
 
@@ -156,14 +158,14 @@ export default function ChatBox() {
         <div className="max-w-3xl mx-auto w-full">
 
           <div className="mb-2 flex justify-start">
-  <div className="max-w-fit">
-    <AnswerModeSelector value={mode} onChange={setMode} />
-  </div>
-</div>
+            <div className="max-w-fit">
+              <AnswerModeSelector value={mode} onChange={setMode} />
+            </div>
+          </div>
 
           <div className={clsx(
-  'flex items-center gap-3 bg-[#1E293B] border border-white/[0.08]',
-  'rounded-2xl px-4 py-2.5 shadow-lg',
+            'flex items-center gap-3 bg-[#1E293B] border border-white/[0.08]',
+            'rounded-2xl px-4 py-2.5 shadow-lg',
             input ? 'border-blue-500/50' : ''
           )}>
 
@@ -188,10 +190,10 @@ export default function ChatBox() {
               onClick={() => sendMessage()}
               disabled={!input.trim() || isLoading}
               className={clsx(
-                'w-9 h-9 rounded-xl flex items-center justify-center',
+                'w-9 h-9 rounded-xl flex items-center justify-center transition-all',
                 input.trim()
-                  ? 'bg-blue-600 hover:bg-blue-500'
-                  : 'bg-white/[0.05]'
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md'
+                  : 'bg-white/[0.05] text-slate-600'
               )}
             >
               <Send size={14} />
@@ -204,7 +206,6 @@ export default function ChatBox() {
   )
 }
 
-// ── Empty state ───────────────────────────────────────────────
 function EmptyState({ activeDocument, onSuggestion }) {
   const suggestions = [
     'What is this document about?',
