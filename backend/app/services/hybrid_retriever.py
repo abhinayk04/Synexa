@@ -49,21 +49,25 @@ def search_bm25(
     document_id: str,
     top_k: int = 10,
 ) -> List[Tuple[Document, float]]:
-    """Query BM25 index for sparse keyword matches prioritizing active document_id."""
+    """Query BM25 index for sparse keyword matches strictly for active document_id."""
     results: List[Tuple[Document, float]] = []
     
-    user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
     target_paths = []
     
-    if document_id and os.path.exists(_bm25_path(user_id, document_id)):
-        target_paths.append(_bm25_path(user_id, document_id))
-
-    if os.path.isdir(user_dir):
-        for entry in os.scandir(user_dir):
-            if entry.is_dir():
-                bp = os.path.join(entry.path, "bm25.pkl")
-                if os.path.exists(bp) and bp not in target_paths:
-                    target_paths.append(bp)
+    # 1. If document_id is provided, strictly target ONLY active document_id BM25 index
+    if document_id and document_id not in ("default", "all", "", None):
+        bp = _bm25_path(user_id, document_id)
+        if os.path.exists(bp):
+            target_paths.append(bp)
+    else:
+        # Cross-document search fallback
+        user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
+        if os.path.isdir(user_dir):
+            for entry in os.scandir(user_dir):
+                if entry.is_dir():
+                    bp = os.path.join(entry.path, "bm25.pkl")
+                    if os.path.exists(bp):
+                        target_paths.append(bp)
 
     tokenized_query = _tokenize(query)
     if not tokenized_query:
@@ -139,26 +143,26 @@ def hybrid_retrieve(
     top_k: int = 7,
 ) -> List[Tuple[Document, float]]:
     """
-    Execute Hybrid Dense (FAISS) + Sparse (BM25) search, prioritizing active document_id.
+    Execute Hybrid Dense (FAISS) + Sparse (BM25) search with STRICT document isolation.
     """
     dense_results: List[Tuple[Document, float]] = []
     
-    # 1. Prioritize active document vectorstore first if provided
-    if document_id and document_id not in ("default", "", None):
+    # 1. If active document_id is provided, search STRICTLY inside active document_id FAISS store
+    if document_id and document_id not in ("default", "all", "", None):
         try:
             active_store = load_vectorstore(user_id=user_id, document_id=document_id)
             docs_and_scores = active_store.similarity_search_with_score(query, k=top_k * 2)
             for doc, score in docs_and_scores:
                 sim = 1.0 / (1.0 + float(score))
-                # Active document boost factor
-                dense_results.append((doc, sim * 1.5))
+                dense_results.append((doc, sim))
+            logger.info(f"[Hybrid] Strict retrieval on doc='{document_id}' returned {len(dense_results)} candidates")
         except Exception as e:
-            logger.warning(f"[Hybrid] Search on active document '{document_id}' failed: {e}")
+            logger.warning(f"[Hybrid] Strict retrieval on document '{document_id}' failed: {e}")
 
-    # 2. Search all user stores for multi-document candidates
-    user_stores = load_all_user_vectorstores(user_id=user_id)
-    for doc_name, store in user_stores:
-        if doc_name != document_id:
+    # 2. Multi-document search fallback ONLY when document_id is 'all' or no specific document_id is set
+    else:
+        user_stores = load_all_user_vectorstores(user_id=user_id)
+        for doc_name, store in user_stores:
             try:
                 docs_and_scores = store.similarity_search_with_score(query, k=top_k)
                 for doc, score in docs_and_scores:
@@ -169,11 +173,11 @@ def hybrid_retrieve(
 
     dense_results.sort(key=lambda x: x[1], reverse=True)
 
-    # 3. Sparse retrieval via BM25 across all documents
+    # 3. Sparse retrieval via BM25 strictly for target document
     sparse_results = search_bm25(query, user_id=user_id, document_id=document_id, top_k=top_k * 2)
 
     if not dense_results and not sparse_results:
-        logger.warning("[Hybrid] Both dense and sparse search returned 0 results.")
+        logger.warning(f"[Hybrid] Search returned 0 results for query '{query[:30]}' on doc '{document_id}'.")
         return []
     if not dense_results:
         return sparse_results[:top_k]
