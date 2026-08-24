@@ -57,9 +57,10 @@ export function ChatProvider({ children }) {
   const activeDocument = activeChat ? {
     name:       activeChat.documentName,
     documentId: activeChat.documentId,
+    chunks:     activeChat.chunks || 12,
     file:       activeChat.file    ?? null,   // may be null after refresh
-    fileUrl:    activeChat.fileUrl ?? null,   // ← NEW: always a string or null
-    pdfUrl:     activeChat.pdfUrl  ?? null,   // ← NEW: always a string or null
+    fileUrl:    activeChat.fileUrl ?? null,   
+    pdfUrl:     activeChat.pdfUrl  ?? null,   
   } : null
 
   const messages = activeChat?.messages || []
@@ -83,17 +84,19 @@ export function ChatProvider({ children }) {
     documentId,
     documentName,
     file,
-    fileUrl = null,   // ← NEW
-    pdfUrl  = null,   // ← NEW
+    fileUrl = null,   
+    pdfUrl  = null,   
+    chunks  = 12,
   ) => {
     const chat = {
       id:           chatId,
       title:        documentName,
       documentId,
       documentName,
+      chunks:       chunks || 12,
       file,
-      fileUrl,         // stored; survives sessionStorage (string)
-      pdfUrl,          // stored; survives sessionStorage (string)
+      fileUrl,         
+      pdfUrl,          
       messages:     [],
       createdAt:    new Date().toISOString(),
     }
@@ -201,8 +204,8 @@ export function ChatProvider({ children }) {
         documentId:   chat.documentId,
         documentName: chat.documentName,
         file:         chat.file    ?? null,
-        fileUrl:      chat.fileUrl ?? null,   // ← NEW
-        pdfUrl:       chat.pdfUrl  ?? null,   // ← NEW
+        fileUrl:      chat.fileUrl ?? null,   
+        pdfUrl:       chat.pdfUrl  ?? null,   
         uploadedAt:   chat.createdAt,
       })
     }
@@ -219,12 +222,13 @@ export function ChatProvider({ children }) {
   const renameSession = useCallback((id, t) => renameChat(id, t), [renameChat])
   const deleteSession = useCallback((id) => deleteChat(id), [deleteChat])
 
-  // UploadArea shim: addDocument({ chatId, documentId, name, file, fileUrl, pdfUrl })
+  // UploadArea shim: addDocument({ chatId, documentId, name, file, fileUrl, pdfUrl, chunks })
   const addDocument = useCallback((doc) => {
     createChat(
       doc.chatId, doc.documentId, doc.name, doc.file,
       doc.fileUrl ?? null,
       doc.pdfUrl  ?? null,
+      doc.chunks  ?? 12,
     )
   }, [createChat])
 
@@ -254,9 +258,9 @@ export function ChatProvider({ children }) {
       // Messages
       messages, addMessage, clearChat,
       // Derived (backward compat)
-      activeDocument,      // now includes fileUrl + pdfUrl
+      activeDocument,      
       activeDocumentId,
-      documents,           // now includes fileUrl + pdfUrl per doc
+      documents,           
       addDocument,
       // Legacy session API (Sidebar)
       sessions, activeSession, activeSessionId,
