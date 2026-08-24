@@ -66,7 +66,8 @@ def is_summary_query(query: str) -> bool:
     summary_terms = [
         "summary", "summarize", "overview", "about", "takeaway", "takeaways",
         "main points", "what is this", "provide summary", "give summary",
-        "explain document", "highlights", "details", "description", "document overview"
+        "explain document", "highlights", "details", "description", "document overview",
+        "what this doc", "what is this doc", "what the pdf", "what is the pdf", "tell me about"
     ]
     return any(term in q_lower for term in summary_terms)
 

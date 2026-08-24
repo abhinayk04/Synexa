@@ -52,6 +52,54 @@ def resolve_document_id(user_id: str, document_id: str) -> str:
     return document_id or "default"
 
 
+def _self_heal_reindex(user_id: str, document_id: str) -> bool:
+    """Finds raw source file in data/documents and builds FAISS + BM25 index on the fly if missing."""
+    docs_dir = settings.DOCUMENTS_DIR
+    if not os.path.exists(docs_dir):
+        return False
+
+    target_file = None
+    clean_id = document_id.replace("doc_", "")
+
+    # Search for matching file in data/documents
+    for root, dirs, files in os.walk(docs_dir):
+        for f in files:
+            if clean_id.lower()[:6] in f.lower() or document_id.lower() in f.lower():
+                target_file = os.path.join(root, f)
+                break
+        if target_file:
+            break
+
+    if not target_file and os.path.exists(docs_dir):
+        # Fallback to matching document by name
+        all_files = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir) if os.path.isfile(os.path.join(docs_dir, f))]
+        if all_files:
+            target_file = all_files[-1]
+
+    if target_file:
+        try:
+            logger.info(f"[Self-Heal] Auto-reindexing '{os.path.basename(target_file)}' for doc='{document_id}'")
+            from app.services.file_loader import load_document
+            from app.services.chunking import chunk_documents
+            from app.services.hybrid_retriever import save_bm25_index
+
+            docs = load_document(target_file)
+            for d in docs:
+                d.metadata["document_name"] = os.path.basename(target_file)
+                d.metadata["document_id"] = document_id
+                d.metadata["user_id"] = user_id
+
+            chunks = chunk_documents(docs)
+            if chunks:
+                add_documents_to_vectorstore(chunks, user_id=user_id, document_id=document_id)
+                save_bm25_index(chunks, user_id=user_id, document_id=document_id)
+                return True
+        except Exception as e:
+            logger.warning(f"[Self-Heal] Auto-reindex failed: {e}")
+
+    return False
+
+
 def add_documents_to_vectorstore(
     chunks: List[Document],
     user_id: str = "default",
@@ -65,7 +113,6 @@ def add_documents_to_vectorstore(
     store.save_local(path)
     total = store.index.ntotal
 
-    # Cache store in RAM
     cache_key = f"{user_id}::{document_id}"
     _vectorstore_cache[cache_key] = store
 
@@ -84,6 +131,12 @@ def load_vectorstore(
         return _vectorstore_cache[cache_key]
 
     index_path = find_document_index_path(user_id, document_id)
+
+    # Self-healing fallback if index was missing from disk
+    if not index_path:
+        reindexed = _self_heal_reindex(user_id, document_id)
+        if reindexed:
+            index_path = find_document_index_path(user_id, document_id)
 
     if not index_path:
         raise FileNotFoundError(
