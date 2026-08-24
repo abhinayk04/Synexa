@@ -9,6 +9,27 @@ from typing import Optional, List, Any
 logger = logging.getLogger(__name__)
 
 
+class GeminiDirectLLM(LLM):
+    """Direct Google Gemini 1.5 Flash LLM Integration."""
+    api_key: str
+
+    @property
+    def _llm_type(self) -> str:
+        return "google_gemini_1.5_flash"
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.warning(f"[GeminiDirectLLM] Direct call warning: {e}")
+            fallback = PureDocumentExtractiveLLM()
+            return fallback._call(prompt)
+
+
 class PureDocumentExtractiveLLM(LLM):
     """
     Strict 100% Document-Grounded Extractive RAG Engine.
@@ -129,7 +150,6 @@ def get_llm():
     if _llm_instance is not None:
         return _llm_instance
 
-    # Check for Google Gemini API key first
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if gemini_key:
         try:
@@ -143,9 +163,10 @@ def get_llm():
             )
             return _llm_instance
         except Exception as e:
-            logger.warning(f"[LLM] Gemini initialization warning: {e}")
+            logger.info(f"[LLM] Using GeminiDirectLLM fallback ({e})")
+            _llm_instance = GeminiDirectLLM(api_key=gemini_key)
+            return _llm_instance
 
-    # Check for Groq API key
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:

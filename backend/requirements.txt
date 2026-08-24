@@ -1,5 +1,5 @@
 # ============================================================
-# requirements.txt — RAG Backend v2
+# requirements.txt — Synexa RAG Backend
 # Install: pip install -r requirements.txt
 # ============================================================
 
@@ -16,9 +16,12 @@ langchain==0.3.25
 langchain-community==0.3.24
 langchain-openai==0.3.16
 langchain-huggingface==0.1.2
+langchain-google-genai>=2.0.0
+langchain-groq>=0.2.0
 
 # ── LLM Providers ────────────────────────────────────────────
 openai==1.75.0
+google-generativeai>=0.8.0
 
 # ── Embeddings ───────────────────────────────────────────────
 sentence-transformers==3.0.1
@@ -26,34 +29,19 @@ sentence-transformers==3.0.1
 # ── Vector Store ─────────────────────────────────────────────
 faiss-cpu>=1.9.0
 
-
 # ── Document Processing ──────────────────────────────────────
-# PDF (text-based)
 pypdf==4.2.0
-
-# DOCX support (NEW)
 python-docx==1.1.2
 
-# ── OCR Support (NEW) ─────────────────────────────────────────
-# Python wrapper for Tesseract OCR engine
+# ── OCR Support ──────────────────────────────────────────────
 pytesseract==0.3.13
-
-# Convert PDF pages to images for OCR
 pdf2image==1.17.0
-
-# Image processing
 Pillow>=10.4.0
-
-
-# OpenCV — image preprocessing for better OCR on handwritten text
-# (grayscale, adaptive threshold, denoising)
-# Optional: if not installed, Pillow-only fallback is used automatically
 opencv-python==4.9.0.80
 
 # ── Utilities ────────────────────────────────────────────────
 pydantic>=2.7.4
 numpy>=1.26.4
-
 
 # ── Hybrid Search & Reranking ────────────────────────────────
 rank-bm25==0.2.2
@@ -70,6 +58,3 @@ pymongo==4.7.3
 pytest==8.2.2
 pytest-asyncio==0.23.7
 httpx==0.27.0
-
-
-
