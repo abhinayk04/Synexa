@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain } from 'lucide-react'
+import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const FEATURES = [
@@ -34,7 +34,7 @@ const STEPS = [
 
 export default function Landing() {
   const navigate = useNavigate()
-  const { isLoggedIn } = useAuth()
+  const { isLoggedIn, logout, displayName } = useAuth()
 
   const handleStartChat = () => {
     if (isLoggedIn) {
@@ -52,7 +52,7 @@ export default function Landing() {
 
       {/* Navbar */}
       <nav className="relative z-10 flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 cursor-pointer" onClick={() => navigate('/')}>
           <div className="flex items-center justify-center">
             <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
           </div>
@@ -60,12 +60,26 @@ export default function Landing() {
         </div>
         <div className="flex items-center gap-3">
           {isLoggedIn ? (
-            <button
-              onClick={() => navigate('/upload')}
-              className="btn-primary text-sm"
-            >
-              Go to Dashboard
-            </button>
+            <>
+              <span className="text-xs text-slate-400 font-medium hidden sm:inline">Hi, {displayName}</span>
+              <button
+                onClick={() => navigate('/upload')}
+                className="btn-primary text-sm"
+              >
+                Go to Dashboard
+              </button>
+              <button
+                onClick={() => {
+                  logout()
+                  navigate('/')
+                }}
+                className="btn-ghost text-xs text-slate-400 hover:text-red-400 flex items-center gap-1"
+                title="Sign Out"
+              >
+                <LogOut size={14} />
+                <span className="hidden sm:inline">Log Out</span>
+              </button>
+            </>
           ) : (
             <>
               <button
