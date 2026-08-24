@@ -1,7 +1,10 @@
 import axios from 'axios'
 
+// Direct connection to FastAPI backend
+const API_BASE_URL = 'http://127.0.0.1:8000'
+
 const api = axios.create({
-  baseURL: '/',
+  baseURL: API_BASE_URL,
   timeout: 600000,
 })
 
@@ -62,41 +65,48 @@ export async function uploadDocument(file, onProgress) {
 
   const response = await api.post('/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 600000,   // 10 min per-request override
-    onUploadProgress: (e) => {
-      if (onProgress && e.total) {
-        onProgress(Math.round((e.loaded * 100) / e.total))
+    onUploadProgress: (progressEvent) => {
+      if (onProgress && progressEvent.total) {
+        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+        onProgress(percent)
       }
     },
   })
   return response.data
 }
 
-// ── Ask ───────────────────────────────────────────────────
-
-export async function askQuestion(question, mode = 'simple', chatId) {
+export async function askQuestion(question, mode = 'simple', chatId = null, documentId = null) {
   const response = await api.post('/ask', {
     question,
     mode,
     chat_id: chatId,
+    document_id: documentId,
   })
   return response.data
 }
 
-export async function askQuestionStream(question, mode = 'simple', chatId, onToken, onMeta, onComplete, onError) {
+export async function askQuestionStream({ question, mode = 'simple', chatId = null, documentId = null, onMeta, onToken, onDone, onError }) {
+  const token = getToken()
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
   try {
-    const token = getToken()
-    const response = await fetch('/ask/stream', {
+    const response = await fetch(`${API_BASE_URL}/ask/stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ question, mode, chat_id: chatId }),
+      headers,
+      body: JSON.stringify({
+        question,
+        mode,
+        chat_id: chatId,
+        document_id: documentId,
+      }),
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      const errText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errText}`)
     }
 
     const reader = response.body.getReader()
@@ -104,64 +114,67 @@ export async function askQuestionStream(question, mode = 'simple', chatId, onTok
     let buffer = ''
 
     while (true) {
-      const { value, done } = await reader.read()
+      const { done, value } = await reader.read()
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n\n')
+      const lines = buffer.split('\n')
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const payload = line.replace('data: ', '').trim()
-          if (payload === '[DONE]') {
-            if (onComplete) onComplete()
-            return
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data:')) continue
+
+        const rawData = trimmed.replace(/^data:\s*/, '')
+        if (rawData === '[DONE]') {
+          if (onDone) onDone()
+          return
+        }
+
+        try {
+          const parsed = JSON.parse(rawData)
+          if (parsed.type === 'meta' && onMeta) {
+            onMeta(parsed)
+          } else if (parsed.type === 'token' && onToken) {
+            onToken(parsed.content)
           }
-          try {
-            const data = JSON.parse(payload)
-            if (data.type === 'meta' && onMeta) onMeta(data)
-            if (data.type === 'token' && onToken) onToken(data.content)
-          } catch (err) {
-            // Ignore parse errors for raw frames
-          }
+        } catch (e) {
+          console.warn('[SSE] Parse warning:', e)
         }
       }
     }
-    if (onComplete) onComplete()
+    if (onDone) onDone()
   } catch (err) {
+    console.error('[SSE] Error:', err)
     if (onError) onError(err)
   }
 }
 
+export async function getDocument(documentId) {
+  const response = await api.get(`/documents/${documentId}`)
+  return response.data
+}
 
-// ── Chat management ───────────────────────────────────────
+export async function getDocuments() {
+  const response = await api.get('/documents')
+  return response.data
+}
 
-export async function listChats() {
+export async function getUserChats() {
   const response = await api.get('/chats')
   return response.data
 }
 
 export async function getChatHistory(chatId) {
-  const response = await api.get(`/chat/${encodeURIComponent(chatId)}/history`)
-  return response.data
-}
-
-export async function deleteChat(chatId) {
-  const response = await api.delete(`/chat/${encodeURIComponent(chatId)}`)
+  const response = await api.get(`/chat/${chatId}`)
   return response.data
 }
 
 export async function deleteDocument(documentId) {
-  const response = await api.delete(`/document/${encodeURIComponent(documentId)}`)
+  const response = await api.delete(`/documents/${documentId}`)
   return response.data
 }
 
-// ── Health ────────────────────────────────────────────────
-
-export async function healthCheck() {
-  const response = await api.get('/')
-  return response.data
+export function getFileUrl(filename) {
+  return `${API_BASE_URL}/files/${encodeURIComponent(filename)}`
 }
-
-export default api
