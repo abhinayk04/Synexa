@@ -39,6 +39,9 @@ export function ChatProvider({ children }) {
   const [chats, setChats]                = useState(loadChats)
   const [activeChat, setActiveChatState] = useState(loadActiveChat)
 
+  // ── Multi-Document Selection state ───────────────────
+  const [selectedDocIds, setSelectedDocIds] = useState([])
+
   // ── UI state ──────────────────────────────────────────
   const [isLoading, setIsLoading]               = useState(false)
   const [darkMode, setDarkMode]                 = useState(true)
@@ -114,6 +117,17 @@ export function ChatProvider({ children }) {
   } : null
 
   const messages = activeChat?.messages || []
+
+  // ── Multi-Document Toggle Helpers ─────────────────────
+  const toggleDocSelection = useCallback((docId) => {
+    setSelectedDocIds(prev =>
+      prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+    )
+  }, [])
+
+  const clearDocSelection = useCallback(() => {
+    setSelectedDocIds([])
+  }, [])
 
   const createChat = useCallback((
     chatId,
@@ -272,7 +286,7 @@ export function ChatProvider({ children }) {
   const renameSession = useCallback((id, t) => renameChat(id, t), [renameChat])
   const deleteSession = useCallback((id) => deleteChat(id), [deleteChat])
 
-  // UploadArea shim: addDocument({ chatId, documentId, name, file, fileUrl, pdfUrl, chunks })
+  // UploadArea shim
   const addDocument = useCallback((doc) => {
     createChat(
       doc.chatId, doc.documentId, doc.name, doc.file,
@@ -307,6 +321,8 @@ export function ChatProvider({ children }) {
       createChat, switchChat, deleteChat, renameChat, deleteDocument,
       // Messages
       messages, addMessage, clearChat,
+      // Multi-Doc Selection
+      selectedDocIds, setSelectedDocIds, toggleDocSelection, clearDocSelection,
       // Derived (backward compat)
       activeDocument,      
       activeDocumentId,

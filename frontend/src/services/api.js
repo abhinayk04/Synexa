@@ -79,17 +79,18 @@ export async function uploadDocument(file, onProgress) {
   return response.data
 }
 
-export async function askQuestion(question, mode = 'simple', chatId = null, documentId = null) {
+export async function askQuestion(question, mode = 'simple', chatId = null, documentId = null, documentIds = null) {
   const response = await api.post('/ask', {
     question,
     mode,
     chat_id: chatId,
     document_id: documentId,
+    document_ids: documentIds,
   })
   return response.data
 }
 
-export async function askQuestionStream({ question, mode = 'simple', chatId = null, documentId = null, onMeta, onToken, onDone, onError }) {
+export async function askQuestionStream({ question, mode = 'simple', chatId = null, documentId = null, documentIds = null, onMeta, onToken, onDone, onError }) {
   const token = getToken()
   const headers = { 'Content-Type': 'application/json' }
   if (token) {
@@ -105,6 +106,7 @@ export async function askQuestionStream({ question, mode = 'simple', chatId = nu
         mode,
         chat_id: chatId,
         document_id: documentId,
+        document_ids: documentIds,
       }),
     })
 

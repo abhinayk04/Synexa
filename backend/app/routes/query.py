@@ -51,6 +51,7 @@ async def ask_question(
             chat_id=chat_id,
             user_id=user_id,
             document_id=doc_id or "default",
+            document_ids=request.document_ids,
         )
 
         sources = [
@@ -107,6 +108,7 @@ async def ask_question_stream(
         chat_id=chat_id,
         user_id=user_id,
         document_id=doc_id or "default",
+        document_ids=request.document_ids,
     )
 
     return StreamingResponse(generator, media_type="text/event-stream")

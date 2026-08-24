@@ -2,7 +2,7 @@ import logging
 import os
 import json
 import asyncio
-from typing import Dict, Any, List, Tuple, AsyncGenerator
+from typing import Dict, Any, List, Tuple, AsyncGenerator, Optional
 
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
@@ -152,12 +152,13 @@ async def run_rag_pipeline(
     chat_id: str = None,
     user_id: str = "default",
     document_id: str = "default",
+    document_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """High-Speed Parallel RAG Execution Pipeline."""
     resolved_chat_id = chat_id
 
     # 1. Derive document_id directly from chat_id if not explicitly passed
-    if (not document_id or document_id == "default") and chat_id:
+    if (not document_id or document_id == "default") and chat_id and not document_ids:
         document_id = _extract_doc_id_from_chat_id(chat_id)
 
     if chat_id:
@@ -167,24 +168,25 @@ async def run_rag_pipeline(
             if chat_doc:
                 user_id = chat_doc.get("user_id", user_id)
                 fetched_doc_id = chat_doc.get("document_id")
-                if fetched_doc_id and fetched_doc_id != "default":
+                if fetched_doc_id and fetched_doc_id != "default" and not document_ids:
                     document_id = fetched_doc_id
         except Exception as e:
             logger.warning(f"[RAG] get_chat lookup warning for '{chat_id}': {e}")
     
     document_id = resolve_document_id(user_id, document_id or "default")
-    logger.info(f"[RAG Pipeline] Question: '{question[:50]}' | user='{user_id}' | doc='{document_id}' | chat='{resolved_chat_id}'")
+    logger.info(f"[RAG Pipeline] Question: '{question[:50]}' | user='{user_id}' | doc='{document_id}' | docs='{document_ids}'")
 
     history_str = await _load_history_for_chat(resolved_chat_id) if resolved_chat_id else ""
     expanded_queries = generate_query_expansions(question)
     
-    # Fast Parallel Retrieval
+    # Fast Parallel Retrieval across selected document_ids
     async def _fetch_candidates(q_var: str):
         return await asyncio.to_thread(
             hybrid_retrieve,
             q_var,
             user_id=user_id,
             document_id=document_id,
+            document_ids=document_ids,
             top_k=settings.TOP_K_RESULTS * 2,
         )
 
@@ -271,6 +273,7 @@ async def stream_rag_pipeline(
     chat_id: str = None,
     user_id: str = "default",
     document_id: str = "default",
+    document_ids: Optional[List[str]] = None,
 ) -> AsyncGenerator[str, None]:
     """Server-Sent Events (SSE) streaming generator yielding word-by-word token payloads."""
     rag_res = await run_rag_pipeline(
@@ -279,6 +282,7 @@ async def stream_rag_pipeline(
         chat_id=chat_id,
         user_id=user_id,
         document_id=document_id,
+        document_ids=document_ids,
     )
 
     meta_frame = {

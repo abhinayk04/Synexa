@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Send, Sparkles, FileText,
-  PanelRight, PanelRightClose, Upload, UserCircle2,
+  Send, Sparkles, FileText, Check, Layers,
+  PanelRight, PanelRightClose, Upload, UserCircle2, X
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useChat } from '../context/ChatContext'
@@ -16,7 +16,8 @@ export default function ChatBox() {
   const navigate = useNavigate()
   const {
     messages, addMessage, isLoading, setIsLoading,
-    activeDocument, activeChat,
+    activeDocument, activeChat, documents,
+    selectedDocIds, toggleDocSelection, clearDocSelection,
     viewerOpen, setViewerOpen,
   } = useChat()
 
@@ -24,6 +25,7 @@ export default function ChatBox() {
 
   const [input, setInput] = useState('')
   const [mode, setMode] = useState('simple')
+  const [multiDocOpen, setMultiDocOpen] = useState(false)
 
   const bottomRef = useRef(null)
   const textareaRef = useRef(null)
@@ -43,10 +45,10 @@ export default function ChatBox() {
     const q = (question || input).trim()
     if (!q || isLoading) return
 
-    if (!activeChat?.id) {
+    if (!activeChat?.id && selectedDocIds.length === 0) {
       addMessage({
         role: 'ai',
-        content: '⚠️ Please upload a document first before asking questions.',
+        content: '⚠️ Please select or upload a document first before asking questions.',
         sources: [],
         confidence: 0,
       })
@@ -61,12 +63,15 @@ export default function ChatBox() {
     let streamedText = ''
     let metaData = { sources: [], confidence: 0 }
 
+    const targetDocIds = selectedDocIds.length > 0 ? selectedDocIds : (activeChat?.documentId ? [activeChat.documentId] : null)
+
     try {
       await askQuestionStream({
         question: q,
         mode,
-        chatId: activeChat.id,
-        documentId: activeChat.documentId,
+        chatId: activeChat?.id,
+        documentId: activeChat?.documentId,
+        documentIds: targetDocIds,
         onMeta: (meta) => {
           metaData = meta
         },
@@ -84,9 +89,8 @@ export default function ChatBox() {
           setIsLoading(false)
         },
         onError: async () => {
-          // Instant HTTP POST Fallback if SSE stream encounters network error
           try {
-            const data = await askQuestion(q, mode, activeChat.id, activeChat.documentId)
+            const data = await askQuestion(q, mode, activeChat?.id, activeChat?.documentId, targetDocIds)
             addMessage({
               role: 'ai',
               content: data.answer,
@@ -123,22 +127,34 @@ export default function ChatBox() {
     <div className="flex flex-col h-full w-full bg-[#0F172A] overflow-hidden relative">
 
       {/* Top Bar */}
-      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06] bg-[#0F172A] flex-shrink-0">
+      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-white/[0.06] bg-[#0F172A] flex-shrink-0 relative z-20">
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex items-center gap-2">
             <h2 className="font-semibold text-[13px] text-white truncate">
-              {activeDocument ? activeDocument.name : 'Synexa Chat'}
+              {selectedDocIds.length > 0
+                ? `Multi-Doc RAG (${selectedDocIds.length} docs selected)`
+                : (activeDocument ? activeDocument.name : 'Synexa Document AI')}
             </h2>
-            {activeDocument && (
-              <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                {activeDocument.chunks || 12} chunks indexed
-              </p>
-            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Multi-Doc Selector Toggle */}
+          <button
+            onClick={() => setMultiDocOpen(p => !p)}
+            className={clsx(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all border",
+              selectedDocIds.length > 0
+                ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400 shadow-md shadow-cyan-900/30"
+                : "bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/10"
+            )}
+            title="Select multiple uploaded documents for cross-document RAG search"
+          >
+            <Layers size={13} />
+            {selectedDocIds.length > 0 ? `${selectedDocIds.length} Selected` : 'Multi-Doc RAG'}
+          </button>
+
           {isLoggedIn && (
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
               <div className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center text-white text-[9px] font-bold">
@@ -169,12 +185,88 @@ export default function ChatBox() {
         </div>
       </div>
 
+      {/* Multi-Document Selection Drawer Dropdown */}
+      <AnimatePresence>
+        {multiDocOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-12 right-12 z-50 w-80 bg-[#1E293B] border border-white/[0.1] rounded-2xl shadow-2xl p-4"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+              <div className="flex items-center gap-2">
+                <Layers size={15} className="text-cyan-400" />
+                <span className="text-xs font-bold text-white">Select Documents for RAG</span>
+              </div>
+              <button
+                onClick={() => setMultiDocOpen(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-2 mb-3 leading-relaxed">
+              Check multiple documents below to cross-reference and chat across all selected files simultaneously.
+            </p>
+
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              {documents.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-4">No documents uploaded yet.</p>
+              ) : (
+                documents.map(doc => {
+                  const isSelected = selectedDocIds.includes(doc.documentId)
+                  return (
+                    <div
+                      key={doc.documentId}
+                      onClick={() => toggleDocSelection(doc.documentId)}
+                      className={clsx(
+                        "flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border text-xs",
+                        isSelected
+                          ? "bg-cyan-500/10 border-cyan-500/30 text-white font-medium"
+                          : "bg-white/[0.03] border-white/[0.05] text-slate-300 hover:bg-white/5"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        <FileText size={14} className={isSelected ? "text-cyan-400" : "text-slate-500"} />
+                        <span className="truncate">{doc.documentName}</span>
+                      </div>
+                      <div className={clsx(
+                        "w-4 h-4 rounded flex items-center justify-center border transition-all",
+                        isSelected ? "bg-cyan-500 border-cyan-400 text-white" : "border-slate-600"
+                      )}>
+                        {isSelected && <Check size={11} />}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {selectedDocIds.length > 0 && (
+              <div className="flex items-center justify-between pt-3 mt-3 border-t border-white/[0.08]">
+                <button
+                  onClick={clearDocSelection}
+                  className="text-[11px] text-slate-400 hover:text-red-400 transition-colors"
+                >
+                  Clear Selection
+                </button>
+                <span className="text-[11px] text-cyan-400 font-semibold">
+                  {selectedDocIds.length} files active
+                </span>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
         <div className="py-6 pb-32 space-y-6 max-w-3xl mx-auto w-full px-4 flex flex-col">
           <AnimatePresence>
             {messages.length === 0
-              ? <EmptyState activeDocument={activeDocument} onSuggestion={sendMessage} />
+              ? <EmptyState activeDocument={activeDocument} selectedDocIds={selectedDocIds} onSuggestion={sendMessage} />
               : messages.map(msg => <MessageBubble key={msg.id} message={msg} />)
             }
           </AnimatePresence>
@@ -197,7 +289,11 @@ export default function ChatBox() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={activeDocument ? `Ask anything about ${activeDocument.name}…` : 'Upload a document to start chatting…'}
+              placeholder={
+                selectedDocIds.length > 0
+                  ? `Ask anything across ${selectedDocIds.length} selected documents…`
+                  : (activeDocument ? `Ask anything about ${activeDocument.name}…` : 'Upload a document to start chatting…')
+              }
               disabled={isLoading}
               rows={1}
               className="w-full py-3.5 pl-4 pr-12 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none resize-none max-h-32 min-h-[44px]"
@@ -222,19 +318,26 @@ export default function ChatBox() {
   )
 }
 
-function EmptyState({ activeDocument, onSuggestion }) {
-  const suggestions = activeDocument
+function EmptyState({ activeDocument, selectedDocIds, onSuggestion }) {
+  const suggestions = selectedDocIds.length > 0
     ? [
-        `What are the main conclusions in ${activeDocument.name}?`,
-        'What noise models and noise removal methods are mentioned?',
-        'Summarize the key experience and technical skills.',
-        'List all major projects and tools mentioned.',
+        'Compare requirements across all selected documents',
+        'Summarize key differences and shared skills',
+        'What are the main technical takeaways from these files?',
+        'List all major projects and qualifications mentioned',
       ]
-    : [
-        'Upload your resume or JD to get started',
-        'Compare JD requirements against your experience',
-        'Summarize key insights and recommendations',
-      ]
+    : (activeDocument
+      ? [
+          `What are the main conclusions in ${activeDocument.name}?`,
+          'What noise models and noise removal methods are mentioned?',
+          'Summarize key experience and technical skills.',
+          'List all major projects and tools mentioned.',
+        ]
+      : [
+          'Upload your resume or JD to get started',
+          'Compare JD requirements against your experience',
+          'Summarize key insights and recommendations',
+        ])
 
   return (
     <motion.div
@@ -247,12 +350,16 @@ function EmptyState({ activeDocument, onSuggestion }) {
       </div>
 
       <h3 className="font-display font-bold text-white text-lg">
-        {activeDocument ? activeDocument.name : 'Welcome to Synexa Document AI'}
+        {selectedDocIds.length > 0
+          ? `Multi-Document RAG Workspace (${selectedDocIds.length} files selected)`
+          : (activeDocument ? activeDocument.name : 'Welcome to Synexa Document AI')}
       </h3>
       <p className="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
-        {activeDocument
-          ? 'Ask specific questions about this document or perform multi-document RAG comparison.'
-          : 'Upload a PDF or DOCX file to analyze content, compare JDs with resumes, and extract insights.'}
+        {selectedDocIds.length > 0
+          ? 'Asking questions will cross-reference and retrieve facts from all selected documents simultaneously.'
+          : (activeDocument
+            ? 'Ask specific questions about this document or perform multi-document RAG comparison.'
+            : 'Upload a PDF or DOCX file to analyze content, compare JDs with resumes, and extract insights.')}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-8 w-full max-w-xl">

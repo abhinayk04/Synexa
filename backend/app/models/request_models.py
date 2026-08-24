@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 
 
 class QueryRequest(BaseModel):
@@ -16,16 +16,18 @@ class QueryRequest(BaseModel):
 
     chat_id: Optional[str] = Field(
         default=None,
-        description=(
-            "chat_id returned by POST /upload. "
-            "Backend resolves document_id + user_id from this. "
-            "If omitted, falls back to document_id."
-        ),
+        description="chat_id for the chat session.",
         example="chat_abc123def456",
     )
 
     document_id: Optional[str] = Field(
         default=None,
-        description="Fallback: document_id from POST /upload (deprecated — use chat_id).",
+        description="Single active document_id.",
         example="doc_abc123def456",
+    )
+
+    document_ids: Optional[List[str]] = Field(
+        default=None,
+        description="List of document_ids for Multi-Document RAG search across multiple selected files.",
+        example=["doc_123", "doc_456"],
     )

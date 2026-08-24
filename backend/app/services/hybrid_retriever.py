@@ -2,7 +2,7 @@ import os
 import pickle
 import logging
 import re
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 from langchain_core.documents import Document
 
@@ -74,21 +74,19 @@ def is_summary_query(query: str) -> bool:
 def search_bm25(
     query: str,
     user_id: str,
-    document_id: str,
+    document_ids: List[str],
     top_k: int = 10,
 ) -> List[Tuple[Document, float]]:
-    """Query BM25 index for sparse keyword matches strictly for active document_id."""
+    """Query BM25 index for sparse keyword matches strictly for targeted document_ids."""
     results: List[Tuple[Document, float]] = []
-    
     target_paths = []
-    
-    # 1. If document_id is provided, strictly target ONLY active document_id BM25 index
-    if document_id and document_id not in ("default", "all", "", None):
-        bp = _bm25_path(user_id, document_id)
-        if os.path.exists(bp):
-            target_paths.append(bp)
+
+    if document_ids:
+        for doc_id in document_ids:
+            bp = _bm25_path(user_id, doc_id)
+            if os.path.exists(bp):
+                target_paths.append(bp)
     else:
-        # Cross-document search fallback
         user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
         if os.path.isdir(user_dir):
             for entry in os.scandir(user_dir):
@@ -168,33 +166,38 @@ def hybrid_retrieve(
     query: str,
     user_id: str = "default",
     document_id: str = "default",
+    document_ids: Optional[List[str]] = None,
     top_k: int = 7,
 ) -> List[Tuple[Document, float]]:
     """
-    Execute Hybrid Dense (FAISS) + Sparse (BM25) search with STRICT document isolation & overview fallback.
+    Execute Hybrid Dense (FAISS) + Sparse (BM25) search across single OR multiple selected documents.
     """
-    # 0. Check for summary / overview queries
-    if is_summary_query(query) and document_id and document_id not in ("default", "all", "", None):
-        overview_chunks = get_document_overview_chunks(user_id, document_id, top_k=top_k)
+    target_doc_ids: List[str] = []
+    if document_ids and isinstance(document_ids, list):
+        target_doc_ids = [d for d in document_ids if d and d not in ("default", "all", "", None)]
+    elif document_id and document_id not in ("default", "all", "", None):
+        target_doc_ids = [document_id]
+
+    # Overview fallback for summary queries on a single document
+    if len(target_doc_ids) == 1 and is_summary_query(query):
+        overview_chunks = get_document_overview_chunks(user_id, target_doc_ids[0], top_k=top_k)
         if overview_chunks:
             return overview_chunks
 
     dense_results: List[Tuple[Document, float]] = []
-    
-    # 1. If active document_id is provided, search STRICTLY inside active document_id FAISS store
-    if document_id and document_id not in ("default", "all", "", None):
-        try:
-            active_store = load_vectorstore(user_id=user_id, document_id=document_id)
-            docs_and_scores = active_store.similarity_search_with_score(query, k=top_k * 2)
-            for doc, score in docs_and_scores:
-                sim = 1.0 / (1.0 + float(score))
-                dense_results.append((doc, sim))
-            logger.info(f"[Hybrid] Strict retrieval on doc='{document_id}' returned {len(dense_results)} candidates")
-        except Exception as e:
-            logger.warning(f"[Hybrid] Strict retrieval on document '{document_id}' failed: {e}")
 
-    # 2. Multi-document search fallback ONLY when document_id is 'all' or no specific document_id is set
+    if target_doc_ids:
+        for doc_id in target_doc_ids:
+            try:
+                active_store = load_vectorstore(user_id=user_id, document_id=doc_id)
+                docs_and_scores = active_store.similarity_search_with_score(query, k=top_k * 2)
+                for doc, score in docs_and_scores:
+                    sim = 1.0 / (1.0 + float(score))
+                    dense_results.append((doc, sim))
+            except Exception as e:
+                logger.warning(f"[Hybrid] Search on document '{doc_id}' failed: {e}")
     else:
+        # Multi-document fallback across all user stores
         user_stores = load_all_user_vectorstores(user_id=user_id)
         for doc_name, store in user_stores:
             try:
@@ -207,18 +210,17 @@ def hybrid_retrieve(
 
     dense_results.sort(key=lambda x: x[1], reverse=True)
 
-    # 3. Sparse retrieval via BM25 strictly for target document
-    sparse_results = search_bm25(query, user_id=user_id, document_id=document_id, top_k=top_k * 2)
+    # Sparse BM25 search
+    sparse_results = search_bm25(query, user_id=user_id, document_ids=target_doc_ids, top_k=top_k * 2)
 
     if not dense_results and not sparse_results:
-        # Fallback to initial document chunks if search returned 0 results
-        logger.warning(f"[Hybrid] Search returned 0 results for query '{query[:30]}'. Using overview fallback.")
-        return get_document_overview_chunks(user_id, document_id, top_k=top_k)
+        if len(target_doc_ids) == 1:
+            return get_document_overview_chunks(user_id, target_doc_ids[0], top_k=top_k)
+        return []
 
     if not dense_results:
         return sparse_results[:top_k]
     if not sparse_results:
         return dense_results[:top_k]
 
-    # 4. Reciprocal Rank Fusion
     return reciprocal_rank_fusion(dense_results, sparse_results, top_k=top_k)
