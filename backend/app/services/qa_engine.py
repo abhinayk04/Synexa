@@ -10,26 +10,28 @@ logger = logging.getLogger(__name__)
 
 class SmartExtractiveLLM(LLM):
     """
-    World-Class Document Intelligence & Extractive RAG Engine.
+    World-Class Document Intelligence & Extractive RAG Engine v3.
     Intelligently parses, synthesizes, and formats text context passages:
-    - Filters out meaningless partial word fragments (e.g. 'main tained').
-    - Fixes broken line-wrap hyphens.
-    - Categorizes questions into Summary/Conclusions, JD Matching, Projects, Skills, and General Queries.
-    - Generates rich, highly readable Markdown responses with bold headings and bullet points.
+    - Normalizes word boundaries and eliminates concatenated words (e.g., 'Implementedparent' -> 'Implemented parent').
+    - Categorizes questions into Functions/Features, Summary/Conclusions, JD Matching, Projects, Skills, and General Queries.
+    - Generates rich, highly readable Markdown responses with clean typography.
     """
 
     @property
     def _llm_type(self) -> str:
-        return "smart_extractive_v2"
+        return "smart_extractive_v3"
 
     def _clean_text(self, text: str) -> str:
-        # Fix broken word splits (e.g. 'main tained' -> 'maintained', 'Trans- formers' -> 'Transformers')
-        cleaned = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+        if not text:
+            return ""
+        # Fix concatenated words from PDF line ends
+        cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+        cleaned = re.sub(r'([a-zA-Z])(\d+)', r'\1 \2', cleaned)
+        cleaned = re.sub(r'(\d+)([a-zA-Z])', r'\1 \2', cleaned)
+        cleaned = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', cleaned)
         cleaned = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', cleaned)
-        cleaned = re.sub(r'\bmain\s+tained\b', 'maintained', cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r'\bper\s+formance\b', 'performance', cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r'\bplat\s+form\b', 'platform', cleaned, flags=re.IGNORECASE)
-        return cleaned
+        cleaned = re.sub(r'[ \t]+', ' ', cleaned)
+        return cleaned.strip()
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
         if "Context:" not in prompt or "Question:" not in prompt:
@@ -49,7 +51,7 @@ class SmartExtractiveLLM(LLM):
             full_text = "\n\n".join(passages)
             raw_lines = [l.strip() for l in full_text.split("\n") if l.strip()]
 
-            # Deduplicate lines while filtering out short garbage lines (< 15 chars unless title)
+            # Deduplicate lines while filtering out short garbage lines (< 15 chars)
             seen_lines = set()
             valid_lines = []
             for line in raw_lines:
@@ -58,34 +60,37 @@ class SmartExtractiveLLM(LLM):
                     seen_lines.add(line_lower)
                     valid_lines.append(line)
 
-            # ── 1. QUESTION MATCH: "CONCLUSIONS / SUMMARY / HIGHLIGHTS / OVERVIEW" ──
-            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main", "about"]):
-                output = ["### 📋 Executive Summary & Key Conclusions\n"]
+            # ── 1. QUESTION MATCH: "FUNCTIONS / FEATURES / METHODS / CAPABILITIES" ──
+            if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does"]):
+                func_lines = [l for l in valid_lines if any(fk in l.lower() for fk in ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "analytics", "model", "algorithm"])]
+                if func_lines:
+                    output = ["### ⚙️ Key Functions & Features Mentioned:\n"]
+                    for line in func_lines[:8]:
+                        clean_l = self._clean_text(line.lstrip("•-* ").strip())
+                        if ":" in clean_l and not clean_l.startswith("•"):
+                            parts = clean_l.split(":", 1)
+                            output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
+                        else:
+                            output.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
+                    return "\n".join(output)
 
-                # Extract key sentences/bullets from document context
-                key_bullets = []
-                for line in valid_lines:
-                    # Ignore meta lines or short labels
-                    if any(skip in line.lower() for skip in ["page 1", "page 2", "table of contents", "document name"]):
-                        continue
-                    if len(line) > 25:
-                        key_bullets.append(line)
+            # ── 2. QUESTION MATCH: "CONCLUSIONS / SUMMARY / HIGHLIGHTS / OVERVIEW" ──
+            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main takeaways"]):
+                output = ["### 📋 Executive Summary & Key Conclusions\n"]
+                key_bullets = [l for l in valid_lines if len(l) >= 25]
 
                 if key_bullets:
                     output.append("**Core Highlights & Takeaways:**")
                     for b in key_bullets[:8]:
-                        if ":" in b and not b.startswith("•") and not b.startswith("-"):
-                            parts = b.split(":", 1)
+                        clean_b = self._clean_text(b.lstrip("•-* ").strip())
+                        if ":" in clean_b and not clean_b.startswith("•"):
+                            parts = clean_b.split(":", 1)
                             output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
-                        elif b.startswith("•") or b.startswith("-") or b.startswith("*"):
-                            clean_b = b.lstrip("•-* ").strip()
-                            output.append(f"• {clean_b}")
                         else:
-                            output.append(f"• {b}")
-
+                            output.append(f"• {clean_b}")
                     return "\n".join(output)
 
-            # ── 2. QUESTION MATCH: "JD MATCH / RESUME MATCH / ALIGNMENT" ──
+            # ── 3. QUESTION MATCH: "JD MATCH / RESUME MATCH / ALIGNMENT" ──
             if any(k in raw_question for k in ["jd", "job description", "matching", "match", "align", "compatible"]):
                 tech_keywords = ["rag", "faiss", "bm25", "reciprocal rank fusion", "cross-encoder", "python", "fastapi", "pandas", "numpy", "polars", "duckdb", "dbt", "pandera", "xgboost", "isolation forest", "shap", "sql", "mongodb", "machine learning", "deep learning"]
                 matched_tech = [tk.title() for tk in tech_keywords if tk in full_text.lower()]
@@ -108,27 +113,27 @@ class SmartExtractiveLLM(LLM):
                 output.append("\n📌 **Recommendation:** Candidate experience demonstrates strong alignment with core role requirements.")
                 return "\n".join(output)
 
-            # ── 3. QUESTION MATCH: "PROJECTS" ──
-            if any(k in raw_question for k in ["project", "projects", "built", "developed"]):
-                project_lines = [l for l in valid_lines if any(p in l.lower() for p in ["project", "synexa", "payment", "crowd", "rag", "analytics", "developed", "built"])]
+            # ── 4. QUESTION MATCH: "PROJECTS" ──
+            if any(k in raw_question for k in ["project", "projects", "system"]):
+                project_lines = [l for l in valid_lines if any(p in l.lower() for p in ["project", "synexa", "payment", "crowd", "rag", "analytics"])]
                 if project_lines:
-                    formatted = ["### 🚀 Projects & Key Engineering Work:\n"]
+                    formatted = ["### 🚀 Key Projects & Engineering Work:\n"]
                     for line in project_lines[:8]:
-                        if ":" in line and not line.startswith("•"):
-                            parts = line.split(":", 1)
+                        clean_l = self._clean_text(line.lstrip("•-* ").strip())
+                        if ":" in clean_l and not clean_l.startswith("•"):
+                            parts = clean_l.split(":", 1)
                             formatted.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
                         else:
-                            clean_l = line.lstrip("•-* ").strip()
                             formatted.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
                     return "\n".join(formatted)
 
-            # ── 4. QUESTION MATCH: "SKILLS / TOOLS" ──
+            # ── 5. QUESTION MATCH: "SKILLS / TOOLS" ──
             if any(k in raw_question for k in ["skill", "skills", "tool", "tools", "tech", "python"]):
                 skill_lines = [l for l in valid_lines if any(s in l.lower() for s in ["skill", "python", "fastapi", "pandas", "faiss", "bm25", "sql", "git", "machine learning"])]
                 if skill_lines:
-                    return "### 🛠️ Technical Skills & Stack:\n\n" + "\n".join([f"• {sl.lstrip('•-* ').strip()}" for sl in skill_lines[:6]])
+                    return "### 🛠️ Technical Skills & Stack:\n\n" + "\n".join([f"• {self._clean_text(sl.lstrip('•-* ').strip())}" for sl in skill_lines[:6]])
 
-            # ── 5. GENERAL ACCURATE SEARCH ──
+            # ── 6. GENERAL ACCURATE SEARCH ──
             query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about"]]
             matched_lines = []
 
@@ -139,14 +144,14 @@ class SmartExtractiveLLM(LLM):
             if matched_lines:
                 output = ["### 📌 Key Information Extracted:\n"]
                 for line in matched_lines[:6]:
-                    clean_l = line.lstrip("•-* ").strip()
+                    clean_l = self._clean_text(line.lstrip("•-* ").strip())
                     output.append(f"• {clean_l}")
                 return "\n".join(output)
 
             # Fallback: return top substantial lines
-            substantial_lines = [l.lstrip("•-* ").strip() for l in valid_lines if len(l) >= 25][:6]
+            substantial_lines = [self._clean_text(l.lstrip("•-* ").strip()) for l in valid_lines if len(l) >= 25][:6]
             if substantial_lines:
-                return "### 📄 Document Summary:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
+                return "### 📄 Document Details:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
 
         except Exception as e:
             logger.warning(f"[SmartExtractiveLLM] Error: {e}")
@@ -168,7 +173,7 @@ def get_llm():
     if provider == "openai":
         from langchain_openai import ChatOpenAI
         if not settings.OPENAI_API_KEY:
-            logger.warning("[LLM] OPENAI_API_KEY not set. Using Smart Extractive v2 Engine.")
+            logger.warning("[LLM] OPENAI_API_KEY not set. Using Smart Extractive v3 Engine.")
             _llm_instance = SmartExtractiveLLM()
             return _llm_instance
         _llm_instance = ChatOpenAI(
@@ -197,7 +202,7 @@ def get_llm():
                 )
                 return _llm_instance
         except Exception as e:
-            logger.warning(f"[LLM] Local Ollama server offline ({e}). Using Smart Extractive v2 Engine.")
+            logger.warning(f"[LLM] Local Ollama server offline ({e}). Using Smart Extractive v3 Engine.")
 
         _llm_instance = SmartExtractiveLLM()
 

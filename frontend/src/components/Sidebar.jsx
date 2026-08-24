@@ -87,7 +87,7 @@ function ChatMenu({ chatId, onClose }) {
           <button onClick={() => { deleteSession(chatId); onClose() }}
             className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-red-400
                        hover:bg-red-500/10 transition-colors">
-            <Trash2 size={12} /> Delete
+            <Trash2 size={12} /> Delete Chat
           </button>
         </>
       )}
@@ -98,7 +98,7 @@ function ChatMenu({ chatId, onClose }) {
 export default function Sidebar() {
   const navigate  = useNavigate()
   const {
-    chats, activeChat, switchChat,
+    chats, activeChat, switchChat, deleteSession,
     documents,
     createChat,
     sidebarCollapsed, setSidebarCollapsed,
@@ -278,26 +278,38 @@ export default function Sidebar() {
                       ? 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10 text-blue-400 border border-blue-500/30 shadow-sm'
                       : 'hover:bg-white/[0.04] text-slate-400 hover:text-slate-200'
                   )}>
-                  <div className="min-w-0 flex-1 pr-5">
+                  <div className="min-w-0 flex-1 pr-12">
                     <p className="text-xs font-medium truncate">{chat.title}</p>
                     <p className="text-[10px] text-slate-600 font-mono mt-0.5 truncate">
                       {chat.documentName}
                     </p>
                   </div>
 
-                  <button
-                    onClick={e => {
-                      e.stopPropagation()
-                      setOpenMenu(openMenu === chat.id ? null : chat.id)
-                    }}
-                    className={clsx(
-                      'absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md',
-                      'text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-all',
-                      'opacity-0 group-hover:opacity-100',
-                      openMenu === chat.id && 'opacity-100 bg-white/5 text-slate-300'
-                    )}>
-                    <MoreHorizontal size={13} />
-                  </button>
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        deleteSession(chat.id)
+                      }}
+                      title="Delete chat session"
+                      className="p-1 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()
+                        setOpenMenu(openMenu === chat.id ? null : chat.id)
+                      }}
+                      className={clsx(
+                        'p-1 rounded-md text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-all',
+                        openMenu === chat.id && 'opacity-100 bg-white/5 text-slate-300'
+                      )}
+                    >
+                      <MoreHorizontal size={13} />
+                    </button>
+                  </div>
 
                   <AnimatePresence>
                     {openMenu === chat.id && (
