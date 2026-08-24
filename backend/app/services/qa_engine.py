@@ -1,5 +1,6 @@
 import logging
 import re
+import os
 import requests
 from app.config import settings
 from langchain_core.language_models.llms import LLM
@@ -8,23 +9,23 @@ from typing import Optional, List, Any
 logger = logging.getLogger(__name__)
 
 
-class SmartExtractiveLLM(LLM):
+class PureDocumentExtractiveLLM(LLM):
     """
-    World-Class Document Intelligence & Extractive RAG Engine v3.
-    Intelligently parses, synthesizes, and formats text context passages:
-    - Normalizes word boundaries and eliminates concatenated words (e.g., 'Implementedparent' -> 'Implemented parent').
-    - Categorizes questions into Functions/Features, Summary/Conclusions, JD Matching, Projects, Skills, and General Queries.
-    - Generates rich, highly readable Markdown responses with clean typography.
+    Strict 100% Document-Grounded Extractive RAG Engine.
+    Exclusively parses, filters, and formats text from the CURRENT UPLOADED DOCUMENT context.
+    - Zero hardcoded resume, project, or domain text.
+    - Normalizes PDF line breaks and word spacing (e.g. 'reconstructionto' -> 'reconstruction to').
+    - Dynamically matches question intent (Functions, Conclusions, Requirements, Details) against document passages.
     """
 
     @property
     def _llm_type(self) -> str:
-        return "smart_extractive_v3"
+        return "pure_document_extractive"
 
     def _clean_text(self, text: str) -> str:
         if not text:
             return ""
-        # Fix concatenated words from PDF line ends
+        # Fix concatenated words from PDF line wraps
         cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
         cleaned = re.sub(r'([a-zA-Z])(\d+)', r'\1 \2', cleaned)
         cleaned = re.sub(r'(\d+)([a-zA-Z])', r'\1 \2', cleaned)
@@ -51,7 +52,7 @@ class SmartExtractiveLLM(LLM):
             full_text = "\n\n".join(passages)
             raw_lines = [l.strip() for l in full_text.split("\n") if l.strip()]
 
-            # Deduplicate lines while filtering out short garbage lines (< 15 chars)
+            # Deduplicate lines while filtering out short noise lines (< 15 chars)
             seen_lines = set()
             valid_lines = []
             for line in raw_lines:
@@ -60,12 +61,17 @@ class SmartExtractiveLLM(LLM):
                     seen_lines.add(line_lower)
                     valid_lines.append(line)
 
-            # ── 1. QUESTION MATCH: "FUNCTIONS / FEATURES / METHODS / CAPABILITIES" ──
-            if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does"]):
-                func_lines = [l for l in valid_lines if any(fk in l.lower() for fk in ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "analytics", "model", "algorithm"])]
-                if func_lines:
-                    output = ["### ⚙️ Key Functions & Features Mentioned:\n"]
-                    for line in func_lines[:8]:
+            if not valid_lines:
+                return "Information not found in documents."
+
+            # ── 1. FUNCTIONS / FEATURES / METHODS / CAPABILITIES ──
+            if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does", "role"]):
+                func_keywords = ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "model", "algorithm", "role", "responsibility", "task", "job", "about", "copilot", "engine"]
+                matched_lines = [l for l in valid_lines if any(fk in l.lower() for fk in func_keywords)]
+                
+                if matched_lines:
+                    output = ["### ⚙️ Key Functions & Details Extracted:\n"]
+                    for line in matched_lines[:8]:
                         clean_l = self._clean_text(line.lstrip("•-* ").strip())
                         if ":" in clean_l and not clean_l.startswith("•"):
                             parts = clean_l.split(":", 1)
@@ -74,14 +80,13 @@ class SmartExtractiveLLM(LLM):
                             output.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
                     return "\n".join(output)
 
-            # ── 2. QUESTION MATCH: "CONCLUSIONS / SUMMARY / HIGHLIGHTS / OVERVIEW" ──
-            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main takeaways"]):
-                output = ["### 📋 Executive Summary & Key Conclusions\n"]
-                key_bullets = [l for l in valid_lines if len(l) >= 25]
+            # ── 2. CONCLUSIONS / SUMMARY / OVERVIEW / MAIN POINTS ──
+            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main"]):
+                output = ["### 📋 Document Summary & Key Takeaways\n"]
+                substantial_lines = [l for l in valid_lines if len(l) >= 20]
 
-                if key_bullets:
-                    output.append("**Core Highlights & Takeaways:**")
-                    for b in key_bullets[:8]:
+                if substantial_lines:
+                    for b in substantial_lines[:8]:
                         clean_b = self._clean_text(b.lstrip("•-* ").strip())
                         if ":" in clean_b and not clean_b.startswith("•"):
                             parts = clean_b.split(":", 1)
@@ -90,71 +95,28 @@ class SmartExtractiveLLM(LLM):
                             output.append(f"• {clean_b}")
                     return "\n".join(output)
 
-            # ── 3. QUESTION MATCH: "JD MATCH / RESUME MATCH / ALIGNMENT" ──
-            if any(k in raw_question for k in ["jd", "job description", "matching", "match", "align", "compatible"]):
-                tech_keywords = ["rag", "faiss", "bm25", "reciprocal rank fusion", "cross-encoder", "python", "fastapi", "pandas", "numpy", "polars", "duckdb", "dbt", "pandera", "xgboost", "isolation forest", "shap", "sql", "mongodb", "machine learning", "deep learning"]
-                matched_tech = [tk.title() for tk in tech_keywords if tk in full_text.lower()]
-
-                output = [
-                    "### 🎯 Job Description vs Resume Match Analysis\n",
-                    "**Overall Alignment:** **Strong Technical Match (85%+)**\n",
-                    "**✅ Core Technical Skills Aligned:**",
-                ]
-
-                if matched_tech:
-                    output.append("• " + ", ".join(matched_tech[:10]))
-                else:
-                    output.append("• Machine Learning, RAG Pipelines, Python, FastAPI, SQL")
-
-                output.append("\n**🚀 Relevant Experience & Projects:**")
-                output.append("• **Synexa RAG Platform:** Built hierarchical chunking RAG system with FAISS, BM25, and RRF.")
-                output.append("• **Payment Risk Analytics:** Built risk microservice processing 500K+ transactions with XGBoost.")
-
-                output.append("\n📌 **Recommendation:** Candidate experience demonstrates strong alignment with core role requirements.")
-                return "\n".join(output)
-
-            # ── 4. QUESTION MATCH: "PROJECTS" ──
-            if any(k in raw_question for k in ["project", "projects", "system"]):
-                project_lines = [l for l in valid_lines if any(p in l.lower() for p in ["project", "synexa", "payment", "crowd", "rag", "analytics"])]
-                if project_lines:
-                    formatted = ["### 🚀 Key Projects & Engineering Work:\n"]
-                    for line in project_lines[:8]:
-                        clean_l = self._clean_text(line.lstrip("•-* ").strip())
-                        if ":" in clean_l and not clean_l.startswith("•"):
-                            parts = clean_l.split(":", 1)
-                            formatted.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
-                        else:
-                            formatted.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
-                    return "\n".join(formatted)
-
-            # ── 5. QUESTION MATCH: "SKILLS / TOOLS" ──
-            if any(k in raw_question for k in ["skill", "skills", "tool", "tools", "tech", "python"]):
-                skill_lines = [l for l in valid_lines if any(s in l.lower() for s in ["skill", "python", "fastapi", "pandas", "faiss", "bm25", "sql", "git", "machine learning"])]
-                if skill_lines:
-                    return "### 🛠️ Technical Skills & Stack:\n\n" + "\n".join([f"• {self._clean_text(sl.lstrip('•-* ').strip())}" for sl in skill_lines[:6]])
-
-            # ── 6. GENERAL ACCURATE SEARCH ──
-            query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about"]]
+            # ── 3. SPECIFIC KEYWORD QUERY SEARCH ──
+            query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about", "from", "with", "this", "that"]]
             matched_lines = []
 
             for line in valid_lines:
-                if any(qw in line.lower() for qw in query_words) and len(line) >= 20:
+                if any(qw in line.lower() for qw in query_words) and len(line) >= 15:
                     matched_lines.append(line)
 
             if matched_lines:
-                output = ["### 📌 Key Information Extracted:\n"]
+                output = ["### 📌 Key Passages Matching Query:\n"]
                 for line in matched_lines[:6]:
                     clean_l = self._clean_text(line.lstrip("•-* ").strip())
                     output.append(f"• {clean_l}")
                 return "\n".join(output)
 
-            # Fallback: return top substantial lines
-            substantial_lines = [self._clean_text(l.lstrip("•-* ").strip()) for l in valid_lines if len(l) >= 25][:6]
+            # Fallback: return top substantial lines from current document context
+            substantial_lines = [self._clean_text(l.lstrip("•-* ").strip()) for l in valid_lines if len(l) >= 20][:6]
             if substantial_lines:
-                return "### 📄 Document Details:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
+                return "### 📄 Document Overview:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
 
         except Exception as e:
-            logger.warning(f"[SmartExtractiveLLM] Error: {e}")
+            logger.warning(f"[PureDocumentExtractiveLLM] Error: {e}")
 
         return "Information not found in documents."
 
@@ -167,14 +129,46 @@ def get_llm():
     if _llm_instance is not None:
         return _llm_instance
 
+    # Check for Google Gemini API key first
+    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if gemini_key:
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            logger.info("[LLM] Initialising Google Gemini 1.5 Flash LLM Engine...")
+            _llm_instance = ChatGoogleGenerativeAI(
+                model="gemini-1.5-flash",
+                google_api_key=gemini_key,
+                temperature=0.0,
+                max_output_tokens=1024,
+            )
+            return _llm_instance
+        except Exception as e:
+            logger.warning(f"[LLM] Gemini initialization warning: {e}")
+
+    # Check for Groq API key
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        try:
+            from langchain_groq import ChatGroq
+            logger.info("[LLM] Initialising Groq Llama3 LLM Engine...")
+            _llm_instance = ChatGroq(
+                model_name="llama3-8b-8192",
+                groq_api_key=groq_key,
+                temperature=0.0,
+                max_tokens=1024,
+            )
+            return _llm_instance
+        except Exception as e:
+            logger.warning(f"[LLM] Groq initialization warning: {e}")
+
     provider = settings.LLM_PROVIDER.lower()
     logger.info(f"[LLM] Initialising provider: '{provider}'")
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
         if not settings.OPENAI_API_KEY:
-            logger.warning("[LLM] OPENAI_API_KEY not set. Using Smart Extractive v3 Engine.")
-            _llm_instance = SmartExtractiveLLM()
+            logger.warning("[LLM] OPENAI_API_KEY not set. Using Pure Document Extractive RAG Engine.")
+            _llm_instance = PureDocumentExtractiveLLM()
             return _llm_instance
         _llm_instance = ChatOpenAI(
             model=settings.OPENAI_MODEL,
@@ -202,12 +196,12 @@ def get_llm():
                 )
                 return _llm_instance
         except Exception as e:
-            logger.warning(f"[LLM] Local Ollama server offline ({e}). Using Smart Extractive v3 Engine.")
+            logger.warning(f"[LLM] Local Ollama server offline ({e}). Using Pure Document Extractive RAG Engine.")
 
-        _llm_instance = SmartExtractiveLLM()
+        _llm_instance = PureDocumentExtractiveLLM()
 
     else:
-        _llm_instance = SmartExtractiveLLM()
+        _llm_instance = PureDocumentExtractiveLLM()
 
     logger.info("[LLM] Ready.")
     return _llm_instance

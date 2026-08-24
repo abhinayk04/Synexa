@@ -49,10 +49,9 @@ def search_bm25(
     document_id: str,
     top_k: int = 10,
 ) -> List[Tuple[Document, float]]:
-    """Query BM25 index for sparse keyword matches across all user documents."""
+    """Query BM25 index for sparse keyword matches prioritizing active document_id."""
     results: List[Tuple[Document, float]] = []
     
-    # 1. Collect all BM25 indices for user
     user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
     target_paths = []
     
@@ -140,31 +139,37 @@ def hybrid_retrieve(
     top_k: int = 7,
 ) -> List[Tuple[Document, float]]:
     """
-    Execute Hybrid Dense (FAISS) + Sparse (BM25) search across ALL uploaded documents of the user.
+    Execute Hybrid Dense (FAISS) + Sparse (BM25) search, prioritizing active document_id.
     """
     dense_results: List[Tuple[Document, float]] = []
     
-    # 1. Load all user vectorstores for multi-document search
-    user_stores = load_all_user_vectorstores(user_id=user_id)
-    if not user_stores and document_id:
+    # 1. Prioritize active document vectorstore first if provided
+    if document_id and document_id not in ("default", "", None):
         try:
-            store = load_vectorstore(user_id=user_id, document_id=document_id)
-            user_stores = [(document_id, store)]
-        except Exception:
-            pass
-
-    for doc_name, store in user_stores:
-        try:
-            docs_and_scores = store.similarity_search_with_score(query, k=top_k * 2)
+            active_store = load_vectorstore(user_id=user_id, document_id=document_id)
+            docs_and_scores = active_store.similarity_search_with_score(query, k=top_k * 2)
             for doc, score in docs_and_scores:
                 sim = 1.0 / (1.0 + float(score))
-                dense_results.append((doc, sim))
+                # Active document boost factor
+                dense_results.append((doc, sim * 1.5))
         except Exception as e:
-            logger.warning(f"[Hybrid] Search failed on index '{doc_name}': {e}")
+            logger.warning(f"[Hybrid] Search on active document '{document_id}' failed: {e}")
+
+    # 2. Search all user stores for multi-document candidates
+    user_stores = load_all_user_vectorstores(user_id=user_id)
+    for doc_name, store in user_stores:
+        if doc_name != document_id:
+            try:
+                docs_and_scores = store.similarity_search_with_score(query, k=top_k)
+                for doc, score in docs_and_scores:
+                    sim = 1.0 / (1.0 + float(score))
+                    dense_results.append((doc, sim))
+            except Exception as e:
+                logger.warning(f"[Hybrid] Search failed on index '{doc_name}': {e}")
 
     dense_results.sort(key=lambda x: x[1], reverse=True)
 
-    # 2. Sparse retrieval via BM25 across all documents
+    # 3. Sparse retrieval via BM25 across all documents
     sparse_results = search_bm25(query, user_id=user_id, document_id=document_id, top_k=top_k * 2)
 
     if not dense_results and not sparse_results:
@@ -175,5 +180,5 @@ def hybrid_retrieve(
     if not sparse_results:
         return dense_results[:top_k]
 
-    # 3. Reciprocal Rank Fusion
+    # 4. Reciprocal Rank Fusion
     return reciprocal_rank_fusion(dense_results, sparse_results, top_k=top_k)
