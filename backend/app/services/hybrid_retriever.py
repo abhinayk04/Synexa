@@ -43,6 +43,34 @@ def save_bm25_index(chunks: List[Document], user_id: str, document_id: str) -> N
     logger.info(f"[BM25] Saved sparse index with {len(chunks)} documents to '{file_path}'")
 
 
+def get_document_overview_chunks(user_id: str, document_id: str, top_k: int = 6) -> List[Tuple[Document, float]]:
+    """Returns top initial document chunks for summary/overview queries."""
+    if not document_id or document_id in ("default", "all", "", None):
+        return []
+
+    try:
+        store = load_vectorstore(user_id=user_id, document_id=document_id)
+        if hasattr(store, "docstore") and hasattr(store.docstore, "_dict"):
+            docs = list(store.docstore._dict.values())
+            if docs:
+                logger.info(f"[Overview] Loaded {len(docs[:top_k])} initial chunks for document '{document_id}'")
+                return [(d, 0.95 - (i * 0.01)) for i, d in enumerate(docs[:top_k])]
+    except Exception as e:
+        logger.warning(f"[Overview] Failed loading initial chunks: {e}")
+    return []
+
+
+def is_summary_query(query: str) -> bool:
+    """Detects if query is requesting a document overview or summary."""
+    q_lower = query.lower().strip()
+    summary_terms = [
+        "summary", "summarize", "overview", "about", "takeaway", "takeaways",
+        "main points", "what is this", "provide summary", "give summary",
+        "explain document", "highlights", "details", "description", "document overview"
+    ]
+    return any(term in q_lower for term in summary_terms)
+
+
 def search_bm25(
     query: str,
     user_id: str,
@@ -143,8 +171,14 @@ def hybrid_retrieve(
     top_k: int = 7,
 ) -> List[Tuple[Document, float]]:
     """
-    Execute Hybrid Dense (FAISS) + Sparse (BM25) search with STRICT document isolation.
+    Execute Hybrid Dense (FAISS) + Sparse (BM25) search with STRICT document isolation & overview fallback.
     """
+    # 0. Check for summary / overview queries
+    if is_summary_query(query) and document_id and document_id not in ("default", "all", "", None):
+        overview_chunks = get_document_overview_chunks(user_id, document_id, top_k=top_k)
+        if overview_chunks:
+            return overview_chunks
+
     dense_results: List[Tuple[Document, float]] = []
     
     # 1. If active document_id is provided, search STRICTLY inside active document_id FAISS store
@@ -177,8 +211,10 @@ def hybrid_retrieve(
     sparse_results = search_bm25(query, user_id=user_id, document_id=document_id, top_k=top_k * 2)
 
     if not dense_results and not sparse_results:
-        logger.warning(f"[Hybrid] Search returned 0 results for query '{query[:30]}' on doc '{document_id}'.")
-        return []
+        # Fallback to initial document chunks if search returned 0 results
+        logger.warning(f"[Hybrid] Search returned 0 results for query '{query[:30]}'. Using overview fallback.")
+        return get_document_overview_chunks(user_id, document_id, top_k=top_k)
+
     if not dense_results:
         return sparse_results[:top_k]
     if not sparse_results:

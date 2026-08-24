@@ -34,7 +34,9 @@ class PureDocumentExtractiveLLM(LLM):
     """
     Strict 100% Document-Grounded Extractive RAG Engine.
     Exclusively parses, filters, and formats text from the CURRENT UPLOADED DOCUMENT context.
-    Handles all basic document queries: Summaries, Role/Job Info, Requirements, Topics, Responsibilities, Details.
+    - Zero hardcoded resume, project, or domain text.
+    - Normalizes PDF line breaks and word spacing (e.g. 'reconstructionto' -> 'reconstruction to').
+    - Dynamically matches question intent (Functions, Conclusions, Requirements, Details) against document passages.
     """
 
     @property
@@ -71,7 +73,7 @@ class PureDocumentExtractiveLLM(LLM):
             full_text = "\n\n".join(passages)
             raw_lines = [l.strip() for l in full_text.split("\n") if l.strip()]
 
-            # Deduplicate lines while filtering out short noise lines (< 12 chars)
+            # Deduplicate lines while filtering out short noise lines (< 15 chars)
             seen_lines = set()
             valid_lines = []
             for line in raw_lines:
@@ -83,40 +85,13 @@ class PureDocumentExtractiveLLM(LLM):
             if not valid_lines:
                 return "Information not found in documents."
 
-            # ── 1. SUMMARY / OVERVIEW / DETAILS / ABOUT QUESTIONS ──
-            summary_terms = ["summary", "summarize", "overview", "provide summary", "about", "detail", "details", "explain", "brief", "main points", "key takeaways", "what is this", "tell me"]
-            if any(term in raw_question for term in summary_terms) or len(raw_question.split()) <= 3:
-                output = ["### 📋 Document Overview & Summary\n"]
-                for line in valid_lines[:10]:
-                    clean_l = self._clean_text(line.lstrip("•-* ").strip())
-                    if ":" in clean_l and not clean_l.startswith("•"):
-                        parts = clean_l.split(":", 1)
-                        output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
-                    else:
-                        output.append(f"• {clean_l}")
-                return "\n".join(output)
-
-            # ── 2. ROLE / JOB TITLE / COMPANY / LOCATION INFO ──
-            if any(k in raw_question for k in ["company", "role", "title", "location", "who", "where", "salary", "stipend"]):
-                role_lines = [l for l in valid_lines if any(rk in l.lower() for rk in ["title", "company", "location", "bengaluru", "gurgaon", "mumbai", "delhi", "ambitio", "bain", "role", "intern", "engineer", "analyst", "stipend", "salary"])]
-                if role_lines:
-                    output = ["### 🏢 Key Document Details:\n"]
-                    for line in role_lines[:8]:
-                        clean_l = self._clean_text(line.lstrip("•-* ").strip())
-                        if ":" in clean_l and not clean_l.startswith("•"):
-                            parts = clean_l.split(":", 1)
-                            output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
-                        else:
-                            output.append(f"• {clean_l}")
-                    return "\n".join(output)
-
-            # ── 3. FUNCTIONS / FEATURES / METHODS / CAPABILITIES ──
-            if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does", "requirement", "requirements", "qualification", "responsibilities"]):
-                func_keywords = ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "model", "algorithm", "role", "responsibility", "task", "job", "about", "copilot", "engine", "requirement", "qualification", "skills"]
+            # ── 1. FUNCTIONS / FEATURES / METHODS / CAPABILITIES ──
+            if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does", "role"]):
+                func_keywords = ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "model", "algorithm", "role", "responsibility", "task", "job", "about", "copilot", "engine"]
                 matched_lines = [l for l in valid_lines if any(fk in l.lower() for fk in func_keywords)]
                 
                 if matched_lines:
-                    output = ["### ⚙️ Key Requirements & Functions Extracted:\n"]
+                    output = ["### ⚙️ Key Functions & Details Extracted:\n"]
                     for line in matched_lines[:8]:
                         clean_l = self._clean_text(line.lstrip("•-* ").strip())
                         if ":" in clean_l and not clean_l.startswith("•"):
@@ -126,14 +101,28 @@ class PureDocumentExtractiveLLM(LLM):
                             output.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
                     return "\n".join(output)
 
-            # ── 4. SPECIFIC KEYWORD QUERY MATCHING ──
-            query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about", "from", "with", "this", "that", "provide", "give", "show", "tell"]]
+            # ── 2. CONCLUSIONS / SUMMARY / OVERVIEW / MAIN POINTS ──
+            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main"]):
+                output = ["### 📋 Document Summary & Key Takeaways\n"]
+                substantial_lines = [l for l in valid_lines if len(l) >= 20]
+
+                if substantial_lines:
+                    for b in substantial_lines[:8]:
+                        clean_b = self._clean_text(b.lstrip("•-* ").strip())
+                        if ":" in clean_b and not clean_b.startswith("•"):
+                            parts = clean_b.split(":", 1)
+                            output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
+                        else:
+                            output.append(f"• {clean_b}")
+                    return "\n".join(output)
+
+            # ── 3. SPECIFIC KEYWORD QUERY SEARCH ──
+            query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about", "from", "with", "this", "that"]]
             matched_lines = []
 
-            if query_words:
-                for line in valid_lines:
-                    if any(qw in line.lower() for qw in query_words) and len(line) >= 15:
-                        matched_lines.append(line)
+            for line in valid_lines:
+                if any(qw in line.lower() for qw in query_words) and len(line) >= 15:
+                    matched_lines.append(line)
 
             if matched_lines:
                 output = ["### 📌 Key Passages Matching Query:\n"]
@@ -142,12 +131,10 @@ class PureDocumentExtractiveLLM(LLM):
                     output.append(f"• {clean_l}")
                 return "\n".join(output)
 
-            # Fallback: return top valid lines from current document context
-            output = ["### 📄 Document Overview:\n"]
-            for l in valid_lines[:8]:
-                clean_l = self._clean_text(l.lstrip("•-* ").strip())
-                output.append(f"• {clean_l}")
-            return "\n".join(output)
+            # Fallback: return top substantial lines from current document context
+            substantial_lines = [self._clean_text(l.lstrip("•-* ").strip()) for l in valid_lines if len(l) >= 20][:6]
+            if substantial_lines:
+                return "### 📄 Document Overview:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
 
         except Exception as e:
             logger.warning(f"[PureDocumentExtractiveLLM] Error: {e}")

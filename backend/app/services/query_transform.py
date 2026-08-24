@@ -41,6 +41,25 @@ def _fix_common_typos(text: str) -> str:
     return " ".join(fixed_words)
 
 
+def generate_hyde_passage(question: str) -> str:
+    """
+    Generate Hypothetical Document Embedding (HyDE) passage.
+    Transforms raw question into a hypothetical answer passage for better dense vector alignment.
+    """
+    clean_q = _fix_common_typos(question)
+    try:
+        llm = get_llm()
+        prompt = HYDE_PROMPT.format(question=clean_q)
+        res = llm.invoke([HumanMessage(content=prompt)])
+        passage = res.content if hasattr(res, "content") else str(res)
+        passage = passage.strip()
+        logger.info(f"[HyDE] Generated hypothetical passage ({len(passage)} chars)")
+        return passage
+    except Exception as e:
+        logger.warning(f"[HyDE] Generation failed ({e}). Falling back to original question.")
+        return clean_q
+
+
 def generate_query_expansions(question: str) -> List[str]:
     """
     Multi-Query Expansion & Code-Switching Translation.
@@ -48,13 +67,6 @@ def generate_query_expansions(question: str) -> List[str]:
     """
     clean_q = _fix_common_typos(question)
     queries = [clean_q]
-
-    # Handle general summary & overview queries
-    q_lower = clean_q.lower().strip()
-    if any(s in q_lower for s in ["summary", "summarize", "overview", "detail", "details", "about", "explain"]):
-        queries.append("document overview introduction description company background role responsibilities key points")
-        queries.append("job title company about the role requirement qualifications summary")
-
     if clean_q.lower() != question.lower():
         queries.append(question)
 
@@ -69,7 +81,7 @@ def generate_query_expansions(question: str) -> List[str]:
             if line and line.lower() != clean_q.lower() and len(line) > 3:
                 queries.append(line)
         
-        logger.info(f"[MultiQuery] Expanded query into {len(queries)} search variations for RAG")
+        logger.info(f"[MultiQuery] Expanded query into {len(queries)} search variations for multilingual RAG")
     except Exception as e:
         logger.warning(f"[MultiQuery] Expansion failed ({e}).")
 
