@@ -174,3 +174,81 @@ async def upload_document(
     except Exception as e:
         logger.error(f"[Upload] Unexpected error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/documents",
+    summary="List all uploaded documents for the authenticated user",
+    tags=["Documents"],
+)
+async def list_documents(user_id: str = Depends(get_current_user)):
+    docs = []
+    seen = set()
+
+    # 1. Check MongoDB documents collection
+    try:
+        from app.services.database import get_documents_collection
+        cursor = get_documents_collection().find({"user_id": user_id})
+        async for d in cursor:
+            doc_id = d["_id"]
+            if doc_id not in seen:
+                seen.add(doc_id)
+                docs.append({
+                    "document_id": doc_id,
+                    "filename": d.get("filename", "Document"),
+                    "chat_id": "chat_" + doc_id[4:],
+                    "num_chunks": d.get("num_chunks", 12),
+                    "file_url": d.get("file_url"),
+                    "pdf_url": d.get("pdf_url"),
+                    "upload_time": str(d.get("upload_time", "")),
+                })
+    except Exception as e:
+        logger.warning(f"[ListDocs] Mongo search skipped: {e}")
+
+    # 2. Scan disk directory vectorstore/<user_id>/ as fallback
+    user_vec_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
+    if os.path.exists(user_vec_dir):
+        for entry in os.scandir(user_vec_dir):
+            if entry.is_dir():
+                doc_id = entry.name
+                if doc_id not in seen:
+                    seen.add(doc_id)
+                    docs_dir = settings.DOCUMENTS_DIR
+                    matched_file = f"Document_{doc_id[:8]}"
+                    if os.path.exists(docs_dir):
+                        for f in os.listdir(docs_dir):
+                            if doc_id[4:10] in f:
+                                matched_file = f
+                                break
+
+                    file_url = _file_url(os.path.join(docs_dir, matched_file))
+                    docs.append({
+                        "document_id": doc_id,
+                        "filename": matched_file,
+                        "chat_id": "chat_" + doc_id[4:],
+                        "num_chunks": 12,
+                        "file_url": file_url,
+                        "pdf_url": file_url if matched_file.endswith(".pdf") else None,
+                        "upload_time": None,
+                    })
+
+    # Also scan default user vectorstore if empty
+    if not docs:
+        default_dir = os.path.join(settings.VECTORSTORE_DIR, "default")
+        if os.path.exists(default_dir):
+            for entry in os.scandir(default_dir):
+                if entry.is_dir():
+                    doc_id = entry.name
+                    if doc_id not in seen:
+                        seen.add(doc_id)
+                        docs.append({
+                            "document_id": doc_id,
+                            "filename": f"Document_{doc_id[4:10]}",
+                            "chat_id": "chat_" + doc_id[4:],
+                            "num_chunks": 12,
+                            "file_url": None,
+                            "pdf_url": None,
+                            "upload_time": None,
+                        })
+
+    return docs

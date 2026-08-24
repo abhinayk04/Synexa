@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 const ChatContext = createContext(null)
 
@@ -52,19 +52,6 @@ export function ChatProvider({ children }) {
   const [highlightedPage, setHighlightedPage] = useState(null)
   const [highlightText, setHighlightText]     = useState('')
 
-  // ── Derived ───────────────────────────────────────────
-  const activeDocumentId = activeChat?.documentId || null
-  const activeDocument = activeChat ? {
-    name:       activeChat.documentName,
-    documentId: activeChat.documentId,
-    chunks:     activeChat.chunks || 12,
-    file:       activeChat.file    ?? null,   // may be null after refresh
-    fileUrl:    activeChat.fileUrl ?? null,   
-    pdfUrl:     activeChat.pdfUrl  ?? null,   
-  } : null
-
-  const messages = activeChat?.messages || []
-
   // ── Internal setters ──────────────────────────────────
   const _setActiveChat = useCallback((chat) => {
     setActiveChatState(chat)
@@ -78,6 +65,55 @@ export function ChatProvider({ children }) {
       return next
     })
   }, [])
+
+  // ── Auto-sync backend documents on load ──────────────
+  useEffect(() => {
+    async function syncBackendDocuments() {
+      try {
+        const { getDocuments } = await import('../services/api')
+        const remoteDocs = await getDocuments()
+        if (remoteDocs && Array.isArray(remoteDocs) && remoteDocs.length > 0) {
+          _setChats(prev => {
+            const existingIds = new Set(prev.map(c => c.documentId))
+            const newChats = [...prev]
+            for (const rd of remoteDocs) {
+              if (!existingIds.has(rd.document_id)) {
+                newChats.push({
+                  id: rd.chat_id || ('chat_' + rd.document_id.slice(4)),
+                  title: rd.filename,
+                  documentId: rd.document_id,
+                  documentName: rd.filename,
+                  chunks: rd.num_chunks || 12,
+                  file: null,
+                  fileUrl: rd.file_url || null,
+                  pdfUrl: rd.pdf_url || null,
+                  messages: [],
+                  createdAt: rd.upload_time || new Date().toISOString(),
+                })
+              }
+            }
+            return newChats
+          })
+        }
+      } catch (err) {
+        console.warn('[ChatContext] Document sync warning:', err)
+      }
+    }
+    syncBackendDocuments()
+  }, [_setChats])
+
+  // ── Derived ───────────────────────────────────────────
+  const activeDocumentId = activeChat?.documentId || null
+  const activeDocument = activeChat ? {
+    name:       activeChat.documentName,
+    documentId: activeChat.documentId,
+    chunks:     activeChat.chunks || 12,
+    file:       activeChat.file    ?? null,   
+    fileUrl:    activeChat.fileUrl ?? null,   
+    pdfUrl:     activeChat.pdfUrl  ?? null,   
+  } : null
+
+  const messages = activeChat?.messages || []
 
   const createChat = useCallback((
     chatId,
@@ -108,6 +144,21 @@ export function ChatProvider({ children }) {
     setHighlightText('')
     return chat
   }, [_setChats, _setActiveChat])
+
+  const newChat = useCallback(() => {
+    if (activeDocument) {
+      const newId = 'chat_' + Math.random().toString(36).substring(2, 11)
+      createChat(
+        newId,
+        activeDocument.documentId,
+        activeDocument.name,
+        activeDocument.file,
+        activeDocument.fileUrl,
+        activeDocument.pdfUrl,
+        activeDocument.chunks,
+      )
+    }
+  }, [activeDocument, createChat])
 
   // ── switchChat ────────────────────────────────────────
   const switchChat = useCallback((chatId) => {
@@ -217,7 +268,6 @@ export function ChatProvider({ children }) {
   const activeSessionId = activeChat?.id || null
   const activeSession   = activeChat
 
-  const newChat       = useCallback(() => {}, [])
   const switchSession = useCallback((id) => switchChat(id), [switchChat])
   const renameSession = useCallback((id, t) => renameChat(id, t), [renameChat])
   const deleteSession = useCallback((id) => deleteChat(id), [deleteChat])
