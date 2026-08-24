@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const FEATURES = [
   {
@@ -33,6 +34,15 @@ const STEPS = [
 
 export default function Landing() {
   const navigate = useNavigate()
+  const { isLoggedIn } = useAuth()
+
+  const handleStartChat = () => {
+    if (isLoggedIn) {
+      navigate('/upload')
+    } else {
+      navigate('/signup')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-navy-900 overflow-x-hidden">
@@ -44,23 +54,34 @@ export default function Landing() {
       <nav className="relative z-10 flex items-center justify-between px-8 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-1">
           <div className="flex items-center justify-center">
-  <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
-</div>
-<span className="text-gradient text-xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
+            <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
+          </div>
+          <span className="text-gradient text-xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/signin')}
-            className="btn-ghost text-sm"
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => navigate('/signup')}
-            className="btn-primary text-sm"
-          >
-            Get Started
-          </button>
+          {isLoggedIn ? (
+            <button
+              onClick={() => navigate('/upload')}
+              className="btn-primary text-sm"
+            >
+              Go to Dashboard
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => navigate('/signin')}
+                className="btn-ghost text-sm"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => navigate('/signup')}
+                className="btn-primary text-sm"
+              >
+                Get Started
+              </button>
+            </>
+          )}
         </div>
       </nav>
 
@@ -91,7 +112,7 @@ export default function Landing() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/upload')}
+              onClick={handleStartChat}
               className="btn-primary flex items-center gap-2 text-base px-7 py-3.5"
             >
               Start Chatting with Your Documents
@@ -196,7 +217,7 @@ export default function Landing() {
           </h2>
           <p className="text-slate-400 mb-8 text-sm">Upload your first PDF and start getting AI-powered answers in seconds.</p>
           <button
-            onClick={() => navigate('/upload')}
+            onClick={handleStartChat}
             className="btn-primary inline-flex items-center gap-2 text-base px-8 py-3.5"
           >
             Upload Your First Document <ArrowRight size={16} />

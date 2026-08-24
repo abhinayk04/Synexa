@@ -52,13 +52,13 @@ export default function Signin() {
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     setLoading(true)
     try {
-      // Real backend login → get JWT token
       const loginData = await loginUser(form.email.trim(), form.password)
       const name = form.email.split('@')[0]
       login({ name, email: form.email.trim(), token: loginData.access_token })
       redirectAfterLogin()
     } catch (err) {
-      setErrors({ submit: err.message || 'Sign-in failed. Check your credentials.' })
+      const msg = err.response?.data?.detail || err.message || 'Sign-in failed. Check your credentials.'
+      setErrors({ submit: msg })
     } finally {
       setLoading(false)
     }
@@ -67,8 +67,8 @@ export default function Signin() {
   const handleGoogle = async () => {
     setGoogleLoading(true)
     try {
-      await new Promise(r => setTimeout(r, 1000))
-      login({ name: 'Google User', email: 'user@gmail.com' })
+      await new Promise(r => setTimeout(r, 600))
+      login({ name: 'Google User', email: 'google.user@example.com', token: 'demo_google_token' })
       redirectAfterLogin()
     } catch {
       setErrors({ submit: 'Google sign-in failed. Please try again.' })
@@ -91,16 +91,13 @@ export default function Signin() {
         transition={{ duration: 0.35 }}
         className="relative w-full max-w-[420px]"
       >
-
-        {/* Card */}
         <div className="bg-[#1E293B] border border-white/[0.06] rounded-2xl p-8 shadow-xl shadow-black/40">
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-1 mb-8">
-          <div className="flex items-center justify-center">
-  <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
-</div>
-          <span className="text-gradient text-2xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
-        </div>
+          <div className="flex items-center justify-center gap-1 mb-8">
+            <div className="flex items-center justify-center">
+              <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
+            </div>
+            <span className="text-gradient text-2xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
+          </div>
 
           <form onSubmit={handleSignin} noValidate className="space-y-4">
             <AuthInput label="Email address" type="email"    value={form.email}    onChange={set('email')}    placeholder="you@example.com" autoComplete="email"            error={errors.email}    disabled={busy} />
@@ -114,7 +111,7 @@ export default function Signin() {
                               ${rememberMe ? 'bg-blue-600 border-blue-500' : 'bg-transparent border-white/[0.15] group-hover:border-white/30'}`}>
                   {rememberMe && (
                     <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                      <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M1.5 3.5L3.5 5.5L7.5 1.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   )}
                 </div>

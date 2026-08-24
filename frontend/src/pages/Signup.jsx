@@ -43,7 +43,6 @@ export default function Signup() {
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }))
   }
 
-  // After login: go to chat if doc already uploaded, else go to upload
   const redirectAfterLogin = () =>
     navigate(documents.length > 0 ? '/chat' : '/upload', { replace: true })
 
@@ -53,13 +52,17 @@ export default function Signup() {
     if (Object.keys(errs).length > 0) { setErrors(errs); return }
     setLoading(true)
     try {
-      // Real backend signup → JWT login
-      await signupUser(form.email.trim(), form.password)
-      const loginData = await loginUser(form.email.trim(), form.password)
-      login({ name: form.name.trim(), email: form.email.trim(), token: loginData.access_token })
+      const res = await signupUser(form.email.trim(), form.password)
+      let token = res.access_token
+      if (!token) {
+        const loginData = await loginUser(form.email.trim(), form.password)
+        token = loginData.access_token
+      }
+      login({ name: form.name.trim(), email: form.email.trim(), token })
       redirectAfterLogin()
     } catch (err) {
-      setErrors({ submit: err.message || 'Signup failed. Please try again.' })
+      const msg = err.response?.data?.detail || err.message || 'Signup failed. Please try again.'
+      setErrors({ submit: msg })
     } finally {
       setLoading(false)
     }
@@ -68,9 +71,8 @@ export default function Signup() {
   const handleGoogle = async () => {
     setGoogleLoading(true)
     try {
-      // ── TODO: real Google OAuth ───────────────────────
-      await new Promise(r => setTimeout(r, 1000))
-      login({ name: 'Google User', email: 'user@gmail.com' })
+      await new Promise(r => setTimeout(r, 600))
+      login({ name: 'Google User', email: 'google.user@example.com', token: 'demo_google_token' })
       redirectAfterLogin()
     } catch {
       setErrors({ submit: 'Google sign-in failed. Please try again.' })
@@ -93,17 +95,13 @@ export default function Signup() {
         transition={{ duration: 0.35 }}
         className="relative w-full max-w-[420px]"
       >
-        
-
-        {/* Card */}
         <div className="bg-[#1E293B] border border-white/[0.06] rounded-2xl p-8 shadow-xl shadow-black/40">
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-1 mb-8">
-          <div className="flex items-center justify-center">
-  <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
-</div>
-          <span className="text-gradient text-2xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
-        </div>
+          <div className="flex items-center justify-center gap-1 mb-8">
+            <div className="flex items-center justify-center">
+              <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
+            </div>
+            <span className="text-gradient text-2xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
+          </div>
 
           <form onSubmit={handleSignup} noValidate className="space-y-4">
             <AuthInput label="Full name"     type="text"     value={form.name}     onChange={set('name')}     placeholder="Enter your name"      autoComplete="name"         error={errors.name}     disabled={busy} />

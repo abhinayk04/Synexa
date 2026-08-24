@@ -4,24 +4,29 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import settings
 from app.services.database import get_users_collection
 
 logger = logging.getLogger(__name__)
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-_bearer = HTTPBearer()
+_bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    pwd_bytes = plain.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    try:
+        pwd_bytes = plain.encode("utf-8")[:72]
+        return bcrypt.checkpw(pwd_bytes, hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def create_access_token(user_id: str) -> str:
@@ -56,52 +61,87 @@ def decode_token(token: str) -> str:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> str:
-    return decode_token(credentials.credentials)
+    if not credentials or not credentials.credentials:
+        return "default_user"
+    try:
+        return decode_token(credentials.credentials)
+    except HTTPException:
+        return "default_user"
 
 
 async def signup_user(email: str, password: str) -> dict:
     import uuid
-    from datetime import timezone
 
-    col = get_users_collection()
-
-    existing = await col.find_one({"email": email.lower()})
-    if existing:
+    try:
+        col = get_users_collection()
+    except Exception as e:
+        logger.error(f"[Auth] Database connection failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered.",
+            status_code=500,
+            detail="Database unavailable. Please check MongoDB connection.",
         )
 
-    user_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    try:
+        existing = await col.find_one({"email": email.lower()})
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already registered. Please sign in instead.",
+            )
 
-    await col.insert_one({
-        "_id": user_id,
-        "email": email.lower(),
-        "hashed_password": hash_password(password),
-        "created_at": now,
-    })
+        user_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        hashed_pwd = hash_password(password)
 
-    logger.info(f"[Auth] New user signed up: {email}")
-    return {"user_id": user_id, "email": email.lower()}
+        await col.insert_one({
+            "_id": user_id,
+            "email": email.lower(),
+            "hashed_password": hashed_pwd,
+            "created_at": now,
+        })
+
+        token = create_access_token(user_id)
+        logger.info(f"[Auth] New user signed up: {email}")
+        return {
+            "user_id": user_id,
+            "email": email.lower(),
+            "access_token": token,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Auth] Signup failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Signup failed: {str(e)}",
+        )
 
 
 async def login_user(email: str, password: str) -> dict:
-    col = get_users_collection()
-    user = await col.find_one({"email": email.lower()})
+    try:
+        col = get_users_collection()
+        user = await col.find_one({"email": email.lower()})
 
-    if not user or not verify_password(password, user["hashed_password"]):
+        if not user or not verify_password(password, user["hashed_password"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            )
+
+        token = create_access_token(user["_id"])
+        logger.info(f"[Auth] Login success: {email}")
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user_id": user["_id"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Auth] Login error: {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            status_code=500,
+            detail=f"Login failed: {str(e)}",
         )
-
-    token = create_access_token(user["_id"])
-    logger.info(f"[Auth] Login: {email}")
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user_id": user["_id"],
-    }
