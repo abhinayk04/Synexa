@@ -1,50 +1,79 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Zap, FileText, Cpu, Database } from 'lucide-react'
+import { ArrowLeft, Zap, FileText, Cpu, Database, Sparkles, FolderOpen, ArrowRight, Layers } from 'lucide-react'
 import UploadArea from '../components/UploadArea'
+import { useChat } from '../context/ChatContext'
 
 const PIPELINE_STEPS = [
-  { icon: FileText, label: 'Text extraction',     desc: 'PyPDF reads every page' },
-  { icon: Cpu,      label: 'Chunking',             desc: 'Split into 500-char chunks' },
-  { icon: Zap,      label: 'Embeddings',           desc: 'all-MiniLM-L6-v2 model' },
-  { icon: Database, label: 'FAISS indexing',       desc: 'Stored for fast retrieval' },
+  { icon: FileText, label: 'OCR & Parsing',       desc: 'Extracts text from PDFs & images' },
+  { icon: Layers,   label: 'Parent-Child Chunking',desc: 'Links 400-char chunks to parent sections' },
+  { icon: Zap,      label: 'Dense & Sparse Embeds',desc: 'FAISS 384-dim + BM25Okapi' },
+  { icon: Database, label: 'RRF Indexing',        desc: 'Built for high-precision retrieval' },
 ]
 
 export default function Upload() {
   const navigate = useNavigate()
+  const { documents, switchChat } = useChat()
 
   return (
-    <div className="min-h-screen bg-navy-900 flex flex-col">
-      {/* Top bar */}
-      <div className="flex items-center gap-4 px-8 py-5 border-b border-white/5">
-        <button
-          onClick={() => navigate(-1)}
-          className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center">
-  <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
-</div>
-          <span className="font-display font-bold text-white">Synexa</span>
+    <div className="min-h-screen bg-[#0F172A] flex flex-col relative overflow-hidden">
+      {/* Background glow effects */}
+      <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-30 pointer-events-none" />
+      <div className="pointer-events-none fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-600/10 rounded-full blur-[140px]" />
+
+      {/* Top Navbar */}
+      <div className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 border-b border-white/[0.06] bg-[#0F172A]/80 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
+            title="Back to Home"
+          >
+            <ArrowLeft size={18} />
+          </button>
+
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/')}>
+            <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 p-1 flex items-center justify-center">
+              <img src="/logo.png" alt="Synexa" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-display font-bold text-white text-lg tracking-wide text-gradient">Synexa</span>
+          </div>
         </div>
+
+        {documents.length > 0 && (
+          <button
+            onClick={() => navigate('/documents')}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-slate-300 hover:text-white transition-all"
+          >
+            <FolderOpen size={14} className="text-blue-400" />
+            My Documents ({documents.length})
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-2xl">
+      {/* Main Container */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
+        <div className="w-full max-w-3xl">
+          
+          {/* Section Header */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-10"
+            className="text-center mb-8"
           >
-            <p className="text-xs font-mono text-accent uppercase tracking-widest mb-3">Step 1 of 2</p>
-            <h1 className="font-display font-extrabold text-3xl text-white mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400 mb-4">
+              <Sparkles size={12} fill="currentColor" />
+              Interactive Knowledge Base
+            </div>
+            <h1 className="font-display font-black text-4xl md:text-5xl text-white tracking-tight mb-3">
               Upload your document
             </h1>
+            <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
+              Upload any PDF, DOCX, or TXT document to create a vector-indexed RAG assistant.
+            </p>
           </motion.div>
 
-          {/* Upload area */}
+          {/* Main Upload Dropzone Area */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -54,30 +83,29 @@ export default function Upload() {
             <UploadArea />
           </motion.div>
 
-          {/* Pipeline steps */}
+          {/* Pipeline Visualizer Steps */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
+            className="p-6 rounded-2xl bg-[#1E293B]/60 border border-white/[0.06] backdrop-blur-md"
           >
-            <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest text-center mb-5">
+            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center mb-6">
               What happens after upload
             </p>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {PIPELINE_STEPS.map((step, i) => (
-                <div key={i} className="relative flex flex-col items-center text-center gap-2">
-                  {i < PIPELINE_STEPS.length - 1 && (
-                    <div className="absolute top-4 left-[calc(50%+20px)] w-full h-px bg-white/5" />
-                  )}
-                  <div className="w-9 h-9 rounded-xl bg-navy-800 border border-white/5 flex items-center justify-center z-10">
-                    <step.icon size={15} className="text-accent" />
+                <div key={i} className="flex flex-col items-center text-center p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-2.5 text-blue-400 shadow-md">
+                    <step.icon size={18} />
                   </div>
-                  <p className="text-[10px] font-display font-semibold text-slate-400">{step.label}</p>
-                  <p className="text-[10px] text-slate-600 leading-tight">{step.desc}</p>
+                  <p className="text-xs font-display font-bold text-white mb-1">{step.label}</p>
+                  <p className="text-[11px] text-slate-400 leading-tight">{step.desc}</p>
                 </div>
               ))}
             </div>
           </motion.div>
+
         </div>
       </div>
     </div>
