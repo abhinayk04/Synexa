@@ -66,6 +66,7 @@ export default function ChatBox() {
         question: q,
         mode,
         chatId: activeChat.id,
+        documentId: activeChat.documentId,
         onMeta: (meta) => {
           metaData = meta
         },
@@ -85,7 +86,7 @@ export default function ChatBox() {
         onError: async () => {
           // Instant HTTP POST Fallback if SSE stream encounters network error
           try {
-            const data = await askQuestion(q, mode, activeChat.id)
+            const data = await askQuestion(q, mode, activeChat.id, activeChat.documentId)
             addMessage({
               role: 'ai',
               content: data.answer,
@@ -225,7 +226,7 @@ function EmptyState({ activeDocument, onSuggestion }) {
   const suggestions = activeDocument
     ? [
         `What are the main conclusions in ${activeDocument.name}?`,
-        'Is this JD matching with my resume?',
+        'What noise models and noise removal methods are mentioned?',
         'Summarize the key experience and technical skills.',
         'List all major projects and tools mentioned.',
       ]

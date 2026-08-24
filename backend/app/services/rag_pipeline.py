@@ -17,7 +17,7 @@ from app.services.query_transform import generate_query_expansions
 logger = logging.getLogger(__name__)
 
 NOT_FOUND = "Information not found in documents."
-SIMILARITY_THRESHOLD = 0.15
+SIMILARITY_THRESHOLD = 0.10
 
 _RULES = """\
 STRICT RULES — follow without exception:
@@ -26,7 +26,7 @@ STRICT RULES — follow without exception:
 3. DO NOT generate code, formulas, or examples unless they appear word-for-word in the context.
 4. If the answer is not found in the context, respond with EXACTLY: "Information not found in documents."
 5. DO NOT guess, infer, or make up any information.
-6. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish (Telugu written in Roman script e.g. "ee document lo candidate experience entha?"), Hinglish (Hindi written in Roman script e.g. "is document me candidate ka experience kya hai?"), or any regional/local language, ALWAYS reply in that EXACT SAME language, dialect, and script!
+6. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish, Hinglish, or any regional language, reply in that SAME language!
 7. Keep answers factual and precise based strictly on the Context provided.\
 """
 
@@ -136,6 +136,16 @@ async def _save_pair_to_chat(chat_id: str, question: str, answer: str) -> None:
         logger.warning(f"[RAG] Could not save to MongoDB: {e}")
 
 
+def _extract_doc_id_from_chat_id(chat_id: str) -> str:
+    """Robustly derives document_id from chat_id (e.g. 'chat_doc_abc123' -> 'doc_abc123')."""
+    if not chat_id:
+        return "default"
+    cleaned = chat_id.replace("chat_", "")
+    if not cleaned.startswith("doc_"):
+        cleaned = "doc_" + cleaned
+    return cleaned
+
+
 async def run_rag_pipeline(
     question: str,
     mode: str = "simple",
@@ -146,23 +156,29 @@ async def run_rag_pipeline(
     """High-Speed Parallel RAG Execution Pipeline."""
     resolved_chat_id = chat_id
 
+    # 1. Derive document_id directly from chat_id if not explicitly passed
+    if (not document_id or document_id == "default") and chat_id:
+        document_id = _extract_doc_id_from_chat_id(chat_id)
+
     if chat_id:
         try:
             from app.services.memory import get_chat
             chat_doc = await get_chat(chat_id)
             if chat_doc:
                 user_id = chat_doc.get("user_id", user_id)
-                document_id = chat_doc.get("document_id", document_id)
+                fetched_doc_id = chat_doc.get("document_id")
+                if fetched_doc_id and fetched_doc_id != "default":
+                    document_id = fetched_doc_id
         except Exception as e:
             logger.warning(f"[RAG] get_chat lookup warning for '{chat_id}': {e}")
     
     document_id = resolve_document_id(user_id, document_id or "default")
+    logger.info(f"[RAG Pipeline] Question: '{question[:50]}' | user='{user_id}' | doc='{document_id}' | chat='{resolved_chat_id}'")
 
     history_str = await _load_history_for_chat(resolved_chat_id) if resolved_chat_id else ""
-
     expanded_queries = generate_query_expansions(question)
     
-    # Ultra-Fast Parallel Retrieval across all expansions
+    # Fast Parallel Retrieval
     async def _fetch_candidates(q_var: str):
         return await asyncio.to_thread(
             hybrid_retrieve,
@@ -208,7 +224,7 @@ async def run_rag_pipeline(
 
     filtered = [(d, s) for d, s in reranked if s >= SIMILARITY_THRESHOLD]
     if not filtered:
-        filtered = reranked[:2]
+        filtered = reranked[:3]
 
     context, sources, scores = _build_context_and_sources(filtered)
     confidence = round(sum(scores) / len(scores), 4) if scores else 0.0
