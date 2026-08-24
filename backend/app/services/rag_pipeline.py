@@ -17,17 +17,18 @@ from app.services.query_transform import generate_query_expansions
 logger = logging.getLogger(__name__)
 
 NOT_FOUND = "Information not found in documents."
-SIMILARITY_THRESHOLD = 0.10
+SIMILARITY_THRESHOLD = 0.08
 
 _RULES = """\
-STRICT RULES — follow without exception:
-1. Answer ONLY using the text in the Context section below.
-2. DO NOT use any prior knowledge or training data.
-3. DO NOT generate code, formulas, or examples unless they appear word-for-word in the context.
-4. If the answer is not found in the context, respond with EXACTLY: "Information not found in documents."
-5. DO NOT guess, infer, or make up any information.
-6. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish, Hinglish, or any regional language, reply in that SAME language!
-7. Keep answers factual and precise based strictly on the Context provided.\
+YOU ARE SYNEXA, AN INTELLIGENT AI DOCUMENT ASSISTANT.
+Follow these guidelines carefully:
+1. For document-specific questions, answer accurately and strictly using the provided Context.
+2. For word meanings, definitions, and concepts (e.g. "what is noise", "explain impulse noise", "what does ROI mean"):
+   - First check if the concept is explained in the Context below. If so, explain it strictly using the document context!
+   - If the word is a general term or concept not explicitly defined in the context, provide a clear, helpful explanation/definition and note how it relates to the document.
+3. For general conversational greetings (hi, hello, who are you), respond warmly and naturally.
+4. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish, Hinglish, or any regional language, reply in that SAME language!
+5. Keep responses structured, professional, and easy to read.\
 """
 
 PROMPT_TEMPLATES = {
@@ -39,7 +40,7 @@ PROMPT_TEMPLATES = {
 
 Question: {question}
 
-Answer (from context only, concise, in the same language as question):""",
+Answer (concise, structured, in the same language as question):""",
 
     "detailed": """\
 {rules}
@@ -49,21 +50,21 @@ Answer (from context only, concise, in the same language as question):""",
 
 Question: {question}
 
-Detailed Answer (from context only, multi-paragraph, in the same language as question):""",
+Detailed Answer (multi-paragraph, structured, in the same language as question):""",
 
     "exam": """\
 {rules}
 Structure as:
 - Definition
 - Explanation
-- Example (only if explicitly in context)
+- Example / Context Reference
 
 {history_block}Context:
 {context}
 
 Question: {question}
 
-Exam-Style Answer (from context only, in the same language as question):""",
+Exam-Style Answer (in the same language as question):""",
 
     "summary": """\
 {rules}
@@ -77,8 +78,27 @@ Structure as:
 
 Question: {question}
 
-Executive Summary Answer (from context only, in the same language as question):""",
+Executive Summary Answer (in the same language as question):""",
 }
+
+
+def is_conversational_query(question: str) -> Optional[str]:
+    """Detects simple greetings and conversational chatter to provide natural AI responses."""
+    q = question.lower().strip().rstrip("!?.").strip()
+    
+    greetings = {"hi", "hello", "hey", "good morning", "good evening", "greetings", "hi there", "hello there"}
+    if q in greetings:
+        return "Hello! 👋 I am **Synexa**, your AI Document Assistant. I am ready to help you analyze, summarize, and answer questions about your uploaded documents! How can I help you today?"
+    
+    who_are_you = {"who are you", "what are you", "what can you do", "help", "who created you"}
+    if any(k in q for k in who_are_you):
+        return "I am **Synexa**, an advanced RAG-powered AI Document Assistant. You can upload PDFs, DOCX, or text files, ask specific questions, request summaries, compare multiple documents, and get instant explanations!"
+
+    thanks = {"thanks", "thank you", "thx", "great", "awesome", "thank you so much"}
+    if q in thanks:
+        return "You're very welcome! 😊 Feel free to ask if you have any more questions about your documents."
+
+    return None
 
 
 def _build_context_and_sources(
@@ -137,7 +157,7 @@ async def _save_pair_to_chat(chat_id: str, question: str, answer: str) -> None:
 
 
 def _extract_doc_id_from_chat_id(chat_id: str) -> str:
-    """Robustly derives document_id from chat_id (e.g. 'chat_doc_abc123' -> 'doc_abc123')."""
+    """Derives document_id from chat_id (e.g. 'chat_doc_abc123' -> 'doc_abc123')."""
     if not chat_id:
         return "default"
     cleaned = chat_id.replace("chat_", "")
@@ -154,8 +174,23 @@ async def run_rag_pipeline(
     document_id: str = "default",
     document_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """High-Speed Parallel RAG Execution Pipeline."""
+    """High-Speed Intelligent RAG Execution Pipeline."""
     resolved_chat_id = chat_id
+
+    # 0. Check conversational intent (greetings, identity, thanks)
+    conversational_reply = is_conversational_query(question)
+    if conversational_reply:
+        if resolved_chat_id:
+            await _save_pair_to_chat(resolved_chat_id, question, conversational_reply)
+        return {
+            "answer": conversational_reply,
+            "sources": [],
+            "confidence": 1.0,
+            "mode": mode,
+            "document_id": document_id,
+            "chat_id": resolved_chat_id,
+            "highlight_text": "",
+        }
 
     # 1. Derive document_id directly from chat_id if not explicitly passed
     if (not document_id or document_id == "default") and chat_id and not document_ids:
@@ -204,19 +239,28 @@ async def run_rag_pipeline(
                 all_candidates.append((doc, score))
 
     if not all_candidates:
+        # Fallback to LLM answering general questions
+        llm = get_llm()
+        gen_prompt = f"Answer the following question clearly and helpfully:\nQuestion: {question}"
+        try:
+            res = await asyncio.to_thread(llm.invoke, [HumanMessage(content=gen_prompt)])
+            gen_ans = res.content if hasattr(res, "content") else str(res)
+        except Exception:
+            gen_ans = NOT_FOUND
+
         if resolved_chat_id:
-            await _save_pair_to_chat(resolved_chat_id, question, NOT_FOUND)
+            await _save_pair_to_chat(resolved_chat_id, question, gen_ans)
         return {
-            "answer": NOT_FOUND,
+            "answer": gen_ans,
             "sources": [],
-            "confidence": 0.0,
+            "confidence": 0.5,
             "mode": mode,
             "document_id": document_id,
             "chat_id": resolved_chat_id,
             "highlight_text": "",
         }
 
-    # Parallel Reranking in background thread
+    # Reranking in background thread
     reranked = await asyncio.to_thread(
         rerank_documents,
         query=question,
@@ -229,7 +273,7 @@ async def run_rag_pipeline(
         filtered = reranked[:3]
 
     context, sources, scores = _build_context_and_sources(filtered)
-    confidence = round(sum(scores) / len(scores), 4) if scores else 0.0
+    confidence = round(sum(scores) / len(scores), 4) if scores else 0.85
     highlight_text = filtered[0][0].page_content.strip()[:300] if filtered else ""
 
     prompt = _build_prompt(question, context, history_str, mode)
@@ -242,16 +286,6 @@ async def run_rag_pipeline(
         answer = str(await asyncio.to_thread(llm.invoke, prompt))
 
     answer = answer.strip()
-
-    _signals = [
-        "information not found", "not found in document",
-        "not present in", "not mentioned in", "cannot be found",
-        "no information", "i don't have", "i do not have",
-    ]
-    if any(sig in answer.lower() for sig in _signals):
-        answer = NOT_FOUND
-        sources = []
-        highlight_text = ""
 
     if resolved_chat_id:
         asyncio.create_task(_save_pair_to_chat(resolved_chat_id, question, answer))
