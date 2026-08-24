@@ -110,6 +110,10 @@ def add_documents_to_vectorstore(
     user_id: str = "default",
     document_id: str = "default",
 ) -> int:
+    if not chunks:
+        logger.warning(f"[VS] No chunks provided to index for user='{user_id}' doc='{document_id}'")
+        return 0
+
     embeddings = get_embedding_model()
     path = _doc_path(user_id, document_id)
     logger.info(f"[VS] Creating high-speed vector index user='{user_id}' doc='{document_id}'")
