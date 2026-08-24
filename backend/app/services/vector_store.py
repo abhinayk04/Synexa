@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
@@ -119,19 +119,26 @@ def load_vectorstore(
 def load_all_user_vectorstores(user_id: str = "default") -> List[Tuple[str, FAISS]]:
     """Load all vectorstore indexes belonging to the user for multi-document RAG search."""
     stores: List[Tuple[str, FAISS]] = []
-    
-    # 1. Search user directory
-    user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
-    if os.path.isdir(user_dir):
-        for entry in os.scandir(user_dir):
-            if entry.is_dir() and _index_exists(user_id, entry.name):
-                try:
-                    store = load_vectorstore(user_id=user_id, document_id=entry.name)
-                    stores.append((entry.name, store))
-                except Exception as e:
-                    logger.warning(f"[VS] Failed loading user index '{entry.name}': {e}")
+    seen_paths = set()
 
-    # 2. Check default/flat index if empty
+    search_user_ids = [user_id]
+    if user_id != "default":
+        search_user_ids.append("default")
+
+    for uid in search_user_ids:
+        user_dir = os.path.join(settings.VECTORSTORE_DIR, uid)
+        if os.path.isdir(user_dir):
+            for entry in os.scandir(user_dir):
+                if entry.is_dir() and _index_exists(uid, entry.name):
+                    faiss_file = os.path.join(entry.path, "index.faiss")
+                    if faiss_file not in seen_paths:
+                        seen_paths.add(faiss_file)
+                        try:
+                            store = load_vectorstore(user_id=uid, document_id=entry.name)
+                            stores.append((entry.name, store))
+                        except Exception as e:
+                            logger.warning(f"[VS] Failed loading user index '{entry.name}': {e}")
+
     if not stores and _flat_index_exists():
         try:
             store = load_vectorstore(user_id="default", document_id="__flat__")
