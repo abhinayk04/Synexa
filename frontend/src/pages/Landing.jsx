@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain, LogOut, User } from 'lucide-react'
+import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain, LogOut, Settings as SettingsIcon, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import ThemeToggle from '../components/ThemeToggle'
+import SettingsModal from '../components/SettingsModal'
 
 const FEATURES = [
   {
@@ -35,7 +36,9 @@ const STEPS = [
 
 export default function Landing() {
   const navigate = useNavigate()
-  const { isLoggedIn, logout, displayName } = useAuth()
+  const { isLoggedIn, logout, displayName, user } = useAuth()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState('profile')
 
   const handleStartChat = () => {
     if (isLoggedIn) {
@@ -43,6 +46,11 @@ export default function Landing() {
     } else {
       navigate('/signup')
     }
+  }
+
+  const openSettings = (tab = 'profile') => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
   }
 
   return (
@@ -63,17 +71,25 @@ export default function Landing() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Theme Selector */}
-          <ThemeToggle />
-
           {isLoggedIn ? (
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.08]">
-                <div className="w-5 h-5 rounded-full bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-[10px] font-bold text-blue-400">
-                  {displayName.charAt(0)}
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => openSettings('appearance')}
+                className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 hover:text-white transition-colors"
+                title="Settings & Themes"
+              >
+                <SettingsIcon size={16} />
+              </button>
+
+              <button
+                onClick={() => openSettings('profile')}
+                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
+              >
+                <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
+                  {displayName ? displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
                 <span className="text-xs text-slate-300 font-medium">{displayName}</span>
-              </div>
+              </button>
 
               <button
                 onClick={() => navigate('/upload')}
@@ -96,11 +112,20 @@ export default function Landing() {
           ) : (
             <div className="flex items-center gap-2">
               <button
+                onClick={() => openSettings('appearance')}
+                className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 hover:text-white transition-colors"
+                title="Themes & Appearance"
+              >
+                <SettingsIcon size={16} />
+              </button>
+
+              <button
                 onClick={() => navigate('/signin')}
                 className="btn-ghost text-xs sm:text-sm px-4 py-2 font-medium"
               >
                 Sign In
               </button>
+
               <button
                 onClick={() => navigate('/signup')}
                 className="btn-primary text-xs sm:text-sm px-4 py-2"
@@ -251,6 +276,8 @@ export default function Landing() {
           </button>
         </motion.div>
       </section>
+
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
     </div>
   )
 }

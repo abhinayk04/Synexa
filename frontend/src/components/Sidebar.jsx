@@ -5,12 +5,12 @@ import {
   Zap, Plus, FileText, MessageSquare,
   ChevronLeft, ChevronRight, Trash2,
   Search, Clock, LayoutDashboard, MoreHorizontal,
-  Pencil, Check, X, UserCircle2, FolderOpen, Settings, Bell, Shield, LogOut
+  Pencil, Check, X, UserCircle2, FolderOpen, Settings, Bell, Shield, LogOut, Palette
 } from 'lucide-react'
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
 import { uploadDocument } from '../services/api'
-import ThemeToggle from './ThemeToggle'
+import SettingsModal from './SettingsModal'
 import clsx from 'clsx'
 
 function ChatMenu({ chatId, onClose }) {
@@ -109,6 +109,8 @@ export default function Sidebar() {
   const [openMenu, setOpenMenu] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState('profile')
 
   const fileInputRef = useRef(null)
 
@@ -153,6 +155,12 @@ export default function Sidebar() {
     c.title.toLowerCase().includes(search.toLowerCase())
   )
 
+  const openSettings = (tab = 'profile') => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+    setProfileOpen(false)
+  }
+
   if (sidebarCollapsed) {
     return (
       <div className="flex flex-col h-full w-16 bg-[#0B1222] items-center py-3 gap-2 border-r border-white/[0.06]">
@@ -181,6 +189,13 @@ export default function Sidebar() {
           <FolderOpen size={16} />
         </button>
 
+        <button onClick={() => openSettings('appearance')}
+          className="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center
+                     text-slate-500 hover:text-slate-300 transition-colors"
+          title="Themes & Settings">
+          <Palette size={16} />
+        </button>
+
         <div className="w-8 h-px bg-white/[0.06] my-1" />
 
         <div className="flex-1 overflow-y-auto w-full flex flex-col items-center gap-1.5 py-1">
@@ -198,8 +213,8 @@ export default function Sidebar() {
         </div>
 
         <button
-          onClick={() => isLoggedIn ? logout() : navigate('/signup')}
-          title={isLoggedIn ? `Logout (${displayName})` : 'Sign Up'}
+          onClick={() => openSettings('profile')}
+          title={`Profile (${displayName})`}
           className="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center
                      text-slate-500 hover:text-slate-300 transition-colors mt-auto">
           {isLoggedIn
@@ -209,6 +224,7 @@ export default function Sidebar() {
               </div>
             : <UserCircle2 size={18} />}
         </button>
+        <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
       </div>
     )
   }
@@ -321,10 +337,6 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-white/[0.06] px-3 py-3 flex-shrink-0">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <ThemeToggle />
-        </div>
-
         {isLoggedIn ? (
           <div className="relative flex items-center gap-3 profile-wrapper">
             <button
@@ -336,7 +348,7 @@ export default function Sidebar() {
               {displayName[0].toUpperCase()}
             </button>
 
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setProfileOpen(!profileOpen)}>
               <p className="text-xs font-semibold text-slate-200 truncate">
                 {displayName}
               </p>
@@ -366,11 +378,27 @@ export default function Sidebar() {
 
                   <div className="py-1">
                     <button
-                      onClick={() => navigate('/documents')}
+                      onClick={() => openSettings('profile')}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
                     >
-                      <FolderOpen size={13} className="text-slate-500" />
-                      My Documents
+                      <UserCircle2 size={13} className="text-slate-500" />
+                      Account & Profile
+                    </button>
+
+                    <button
+                      onClick={() => openSettings('appearance')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
+                    >
+                      <Palette size={13} className="text-slate-500" />
+                      Appearance & Themes
+                    </button>
+
+                    <button
+                      onClick={() => openSettings('security')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
+                    >
+                      <Settings size={13} className="text-slate-500" />
+                      Settings & Security
                     </button>
                   </div>
 
@@ -397,6 +425,8 @@ export default function Sidebar() {
           </button>
         )}
       </div>
+
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
     </div>
   )
 }
