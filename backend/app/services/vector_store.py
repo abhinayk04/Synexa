@@ -1,16 +1,18 @@
 import os
 import shutil
 import logging
-from typing import List
+from typing import List, Dict
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-
 
 from app.config import settings
 from app.services.embeddings import get_embedding_model
 
 logger = logging.getLogger(__name__)
+
+# High-Performance In-Memory FAISS VectorStore Cache
+_vectorstore_cache: Dict[str, FAISS] = {}
 
 
 def _doc_path(user_id: str, document_id: str) -> str:
@@ -62,11 +64,17 @@ def add_documents_to_vectorstore(
 ) -> int:
     embeddings = get_embedding_model()
     path = _doc_path(user_id, document_id)
-    logger.info(f"[VS] Creating index user='{user_id}' doc='{document_id}'")
+    logger.info(f"[VS] Creating high-speed vector index user='{user_id}' doc='{document_id}'")
+    
     store = FAISS.from_documents(chunks, embeddings)
     store.save_local(path)
     total = store.index.ntotal
-    logger.info(f"[VS] Saved {total} vectors → {path}")
+
+    # Cache store in RAM
+    cache_key = f"{user_id}::{document_id}"
+    _vectorstore_cache[cache_key] = store
+
+    logger.info(f"[VS] Saved & cached {total} vectors → {path}")
     return total
 
 
@@ -75,6 +83,12 @@ def load_vectorstore(
     document_id: str = "default",
 ) -> FAISS:
     document_id = resolve_document_id(user_id, document_id)
+    cache_key = f"{user_id}::{document_id}"
+
+    # 1. Return from In-Memory RAM Cache if available (< 1ms)
+    if cache_key in _vectorstore_cache:
+        logger.info(f"[VS Cache Hit] Returning in-memory FAISS index user='{user_id}' doc='{document_id}'")
+        return _vectorstore_cache[cache_key]
 
     if document_id == "__flat__":
         embeddings = get_embedding_model()
@@ -83,7 +97,8 @@ def load_vectorstore(
             embeddings,
             allow_dangerous_deserialization=True,
         )
-        logger.info("[VS] Loaded legacy flat index")
+        _vectorstore_cache[cache_key] = store
+        logger.info("[VS] Loaded legacy flat index into RAM cache")
         return store
 
     if not _index_exists(user_id, document_id):
@@ -97,11 +112,16 @@ def load_vectorstore(
     store = FAISS.load_local(
         path, embeddings, allow_dangerous_deserialization=True
     )
-    logger.info(f"[VS] Loaded index user='{user_id}' doc='{document_id}'")
+    _vectorstore_cache[cache_key] = store
+    logger.info(f"[VS Cache Miss] Loaded index into RAM user='{user_id}' doc='{document_id}'")
     return store
 
 
 def delete_document_index(user_id: str, document_id: str) -> bool:
+    cache_key = f"{user_id}::{document_id}"
+    if cache_key in _vectorstore_cache:
+        del _vectorstore_cache[cache_key]
+
     path = os.path.join(settings.VECTORSTORE_DIR, user_id, document_id)
     if os.path.exists(path):
         shutil.rmtree(path)
