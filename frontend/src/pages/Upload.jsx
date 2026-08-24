@@ -1,128 +1,142 @@
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, MessageSquare, FileText, ArrowRight, FolderOpen } from 'lucide-react'
+import { MessageSquare, FileText, ArrowRight, FolderOpen, Clock, Sparkles, Plus, Search } from 'lucide-react'
 import UploadArea from '../components/UploadArea'
+import Sidebar from '../components/Sidebar'
 import { useChat } from '../context/ChatContext'
+import { useAuth } from '../context/AuthContext'
 
 export default function Upload() {
   const navigate = useNavigate()
   const { chats, switchChat, documents } = useChat()
+  const { displayName } = useAuth()
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex flex-col relative overflow-hidden">
-      {/* Background glow */}
-      <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-30 pointer-events-none" />
-      <div className="pointer-events-none fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-600/10 rounded-full blur-[140px]" />
+    <div className="flex h-screen bg-[#0F172A] overflow-hidden">
+      {/* Persistent Left Sidebar */}
+      <Sidebar />
 
-      {/* Top Navbar */}
-      <div className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 border-b border-white/[0.06] bg-[#0F172A]/80 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors"
-            title="Back to Home"
-          >
-            <ArrowLeft size={18} />
-          </button>
+      {/* Main Right Workspace Area */}
+      <div className="flex-1 flex flex-col h-full overflow-y-auto relative bg-[#0B1222]">
+        {/* Background glow effects */}
+        <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-20 pointer-events-none" />
+        <div className="pointer-events-none fixed top-0 right-0 w-[600px] h-[300px] bg-blue-600/10 rounded-full blur-[140px]" />
 
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/')}>
+        {/* Workspace Top Header */}
+        <div className="flex items-center justify-between px-8 py-5 border-b border-white/[0.06] bg-[#0B1222]/80 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 p-1 flex items-center justify-center">
               <img src="/logo.png" alt="Synexa" className="w-full h-full object-contain" />
             </div>
-            <span className="font-display font-bold text-white text-lg tracking-wide text-gradient">Synexa</span>
+            <div>
+              <h2 className="font-display font-bold text-white text-base leading-tight">Document Workspace</h2>
+              <p className="text-[11px] text-slate-400">Upload documents or resume chat history</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {chats.length > 0 && (
+              <button
+                onClick={() => {
+                  switchChat(chats[0].id)
+                  navigate('/chat')
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-all shadow-lg shadow-blue-900/40"
+              >
+                <MessageSquare size={14} />
+                Open Active Chat
+              </button>
+            )}
           </div>
         </div>
 
-        {chats.length > 0 && (
-          <button
-            onClick={() => {
-              switchChat(chats[0].id)
-              navigate('/chat')
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition-all shadow-lg shadow-blue-900/40"
-          >
-            <MessageSquare size={14} />
-            Go to Recent Chat
-          </button>
-        )}
-      </div>
+        {/* Workspace Content */}
+        <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8 relative z-10 space-y-10">
 
-      {/* Main Container */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
-        <div className="w-full max-w-xl">
-          
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-8"
-          >
-            <h1 className="font-display font-extrabold text-3xl md:text-4xl text-white tracking-tight mb-2">
-              Start a New Chat
-            </h1>
-            <p className="text-sm text-slate-400">
-              Upload a PDF, DOCX, or TXT document to begin asking questions.
-            </p>
-          </motion.div>
+          {/* Section 1: Upload Drag & Drop Area */}
+          <div className="space-y-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center space-y-2"
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-xs font-mono text-blue-400">
+                <Sparkles size={12} fill="currentColor" /> RAG Knowledge Assistant
+              </div>
+              <h1 className="font-display font-extrabold text-3xl md:text-4xl text-white tracking-tight">
+                Start a New Document Chat
+              </h1>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Drag & drop any PDF, DOCX, or TXT file below to create an instant AI assistant.
+              </p>
+            </motion.div>
 
-          {/* Clean Upload Dropzone Area */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="mb-8"
-          >
-            <UploadArea />
-          </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              <UploadArea />
+            </motion.div>
+          </div>
 
-          {/* Resume Old Chats List (If user has previous chats) */}
+          {/* Section 2: Recent Document Chats & Past History */}
           {chats.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="p-5 rounded-2xl bg-[#1E293B]/70 border border-white/[0.08] backdrop-blur-md"
+              className="space-y-4"
             >
-              <div className="flex items-center justify-between mb-3 px-1">
-                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider font-semibold">
-                  Or Continue an Existing Chat
-                </span>
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <Clock size={16} className="text-blue-400" />
+                  <h3 className="font-display font-bold text-white text-base">Recent Chat History</h3>
+                  <span className="text-xs text-slate-500 font-mono">({chats.length} active sessions)</span>
+                </div>
+
                 <button
                   onClick={() => navigate('/documents')}
-                  className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium flex items-center gap-1"
+                  className="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 transition-colors"
                 >
-                  All Documents ({documents.length}) <ArrowRight size={12} />
+                  View All Documents <ArrowRight size={12} />
                 </button>
               </div>
 
-              <div className="space-y-2">
-                {chats.slice(0, 3).map((c) => (
-                  <div
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {chats.map((c) => (
+                  <motion.div
                     key={c.id}
+                    whileHover={{ scale: 1.01, y: -2 }}
                     onClick={() => {
                       switchChat(c.id)
                       navigate('/chat')
                     }}
-                    className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.04] hover:border-blue-500/30 cursor-pointer transition-all group"
+                    className="p-4 rounded-2xl bg-[#1E293B]/60 hover:bg-[#1E293B] border border-white/[0.08] hover:border-blue-500/40 cursor-pointer transition-all duration-200 shadow-xl flex flex-col justify-between group"
                   >
-                    <div className="flex items-center gap-3 min-w-0 pr-2">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 flex-shrink-0">
-                        <FileText size={15} />
+                    <div className="flex items-start gap-3.5 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0 group-hover:scale-105 transition-transform">
+                        <FileText size={18} />
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-white truncate group-hover:text-blue-300 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
                           {c.title}
-                        </p>
-                        <p className="text-[10px] text-slate-400 truncate">
+                        </h4>
+                        <p className="text-xs text-slate-400 truncate mt-0.5 font-mono">
                           {c.documentName}
                         </p>
                       </div>
                     </div>
 
-                    <span className="text-xs text-blue-400 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
-                      Open <ArrowRight size={12} />
-                    </span>
-                  </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-white/[0.06] text-xs">
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        {c.uploadedAt || 'Recent'}
+                      </span>
+                      <span className="text-xs font-semibold text-blue-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                        Resume Chat <ArrowRight size={12} />
+                      </span>
+                    </div>
+                  </motion.div>
                 ))}
               </div>
             </motion.div>
