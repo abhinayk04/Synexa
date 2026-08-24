@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
@@ -71,7 +72,6 @@ async def upload_document(
         )
 
         raw_file_url = _file_url(saved_path)
-        logger.info(f"[Upload] Raw file URL: {raw_file_url}")
 
         pdf_path: str | None = None
         pdf_url: str | None = None
@@ -81,7 +81,6 @@ async def upload_document(
                 user_converted_dir = os.path.join(CONVERTED_DIR, user_id, document_id)
                 pdf_path = convert_to_pdf(saved_path, user_converted_dir)
                 pdf_url = _file_url(pdf_path)
-                logger.info(f"[Upload] PDF URL: {pdf_url}")
             except RuntimeError as e:
                 logger.warning(f"[Upload] PDF conversion skipped: {e}")
 
@@ -107,64 +106,61 @@ async def upload_document(
                 ),
             )
 
-        total_vectors = add_documents_to_vectorstore(
+        # High-Speed Vector & BM25 Indexing
+        add_documents_to_vectorstore(
             chunks, user_id=user_id, document_id=document_id,
         )
 
-        # ── Save BM25 Sparse Index for Hybrid Retrieval ──────────
         try:
             from app.services.hybrid_retriever import save_bm25_index
             save_bm25_index(chunks, user_id=user_id, document_id=document_id)
         except Exception as e:
             logger.warning(f"[Upload] BM25 indexing skipped: {e}")
 
-        # ── Document Intelligence (Summary & Topics) ─────────────
-        doc_intel = {}
-        try:
-            from app.services.summarizer import generate_document_intelligence
-            doc_intel = generate_document_intelligence(chunks)
-        except Exception as e:
-            logger.warning(f"[Upload] Document intelligence generation failed: {e}")
+        # Fast Summary Intelligence
+        from app.services.summarizer import generate_document_intelligence
+        doc_intel = generate_document_intelligence(chunks)
 
-        chat_id = None
-        try:
-            from app.services.memory import create_chat
-            chat_id = await create_chat(
-                user_id=user_id,
-                document_id=document_id,
-                title=original_filename,
-            )
-            logger.info(f"[Upload] Chat created: '{chat_id}'")
-        except Exception as e:
-            logger.warning(f"[Upload] Could not create chat in MongoDB: {e}")
-            chat_id = "chat_" + document_id[4:]
+        chat_id = "chat_" + document_id[4:]
 
-        try:
-            from app.services.database import get_documents_collection
-            await get_documents_collection().insert_one({
-                "_id": document_id,
-                "user_id": user_id,
-                "filename": original_filename,
-                "upload_time": datetime.now(timezone.utc),
-                "num_chunks": len(chunks),
-                "file_type": documents[0].metadata.get("file_type", "unknown"),
-                "saved_path": saved_path,
-                "pdf_path": pdf_path,
-                "file_url": raw_file_url,
-                "pdf_url": pdf_url,
-                "summary": doc_intel.get("summary", ""),
-                "topics": doc_intel.get("topics", []),
-                "word_count": doc_intel.get("word_count", 0),
-                "est_read_time_min": doc_intel.get("est_read_time_min", 0),
-            })
-        except Exception as e:
-            logger.warning(f"[Upload] MongoDB document save skipped: {e}")
+        # Fast background Mongo persistence (never blocks the upload response)
+        async def _persist_bg():
+            try:
+                from app.services.memory import create_chat
+                await asyncio.wait_for(
+                    create_chat(user_id=user_id, document_id=document_id, title=original_filename),
+                    timeout=1.0
+                )
+            except Exception:
+                pass
 
+            try:
+                from app.services.database import get_documents_collection
+                await asyncio.wait_for(
+                    get_documents_collection().insert_one({
+                        "_id": document_id,
+                        "user_id": user_id,
+                        "filename": original_filename,
+                        "upload_time": datetime.now(timezone.utc),
+                        "num_chunks": len(chunks),
+                        "file_type": documents[0].metadata.get("file_type", "unknown"),
+                        "saved_path": saved_path,
+                        "pdf_path": pdf_path,
+                        "file_url": raw_file_url,
+                        "pdf_url": pdf_url,
+                        "summary": doc_intel.get("summary", ""),
+                        "topics": doc_intel.get("topics", []),
+                        "word_count": doc_intel.get("word_count", 0),
+                        "est_read_time_min": doc_intel.get("est_read_time_min", 0),
+                    }),
+                    timeout=1.0
+                )
+            except Exception:
+                pass
 
-        logger.info(
-            f"[Upload] ✅ '{original_filename}' → "
-            f"{len(chunks)} chunks | chat='{chat_id}'"
-        )
+        asyncio.create_task(_persist_bg())
+
+        logger.info(f"[Upload] ✅ '{original_filename}' → {len(chunks)} chunks | chat='{chat_id}'")
 
         return UploadResponse(
             message="Document indexed successfully",

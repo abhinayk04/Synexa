@@ -72,7 +72,8 @@ export default function UploadArea() {
       })
 
       setStatus('success')
-      setTimeout(() => navigate('/chat'), 1400)
+      // Instant seamless navigation to chat
+      setTimeout(() => navigate('/chat'), 200)
 
     } catch (err) {
       console.error('[UploadArea] upload error:', err)

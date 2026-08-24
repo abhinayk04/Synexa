@@ -2,7 +2,6 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.config import settings
 
-print("MONGO URI:", settings.MONGO_URI)
 logger = logging.getLogger(__name__)
 
 _client: AsyncIOMotorClient = None
@@ -11,10 +10,19 @@ _db: AsyncIOMotorDatabase = None
 
 async def connect_db() -> None:
     global _client, _db
-    _client = AsyncIOMotorClient(settings.MONGO_URI)
-    _db = _client[settings.MONGO_DB_NAME]
-    await _client.admin.command("ping")
-    logger.info(f"[DB] Connected → {settings.MONGO_URI}/{settings.MONGO_DB_NAME}")
+    try:
+        # Fast 1.5s connection timeout so remote MongoDB network issues never hang the server
+        _client = AsyncIOMotorClient(
+            settings.MONGO_URI,
+            serverSelectionTimeoutMS=1500,
+            connectTimeoutMS=1500,
+            socketTimeoutMS=1500
+        )
+        _db = _client[settings.MONGO_DB_NAME]
+        await _client.admin.command("ping")
+        logger.info(f"[DB] Connected → {settings.MONGO_URI}/{settings.MONGO_DB_NAME}")
+    except Exception as e:
+        logger.warning(f"[DB] MongoDB offline or unreachable ({e}). App operating in fast memory mode.")
 
 
 async def close_db() -> None:
@@ -26,7 +34,7 @@ async def close_db() -> None:
 
 def get_db() -> AsyncIOMotorDatabase:
     if _db is None:
-        raise RuntimeError("Database not initialised. Call connect_db() at startup.")
+        raise RuntimeError("Database not initialised.")
     return _db
 
 
