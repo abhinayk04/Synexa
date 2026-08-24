@@ -80,9 +80,10 @@ async def upload_document(
             try:
                 user_converted_dir = os.path.join(CONVERTED_DIR, user_id, document_id)
                 pdf_path = await asyncio.to_thread(convert_to_pdf, saved_path, user_converted_dir)
-                pdf_url = _file_url(pdf_path)
-            except RuntimeError as e:
-                logger.warning(f"[Upload] PDF conversion skipped: {e}")
+                if pdf_path and os.path.exists(pdf_path):
+                    pdf_url = _file_url(pdf_path)
+            except Exception as e:
+                logger.warning(f"[Upload] PDF preview conversion skipped: {e}")
 
         try:
             documents = await asyncio.to_thread(load_document, saved_path)
