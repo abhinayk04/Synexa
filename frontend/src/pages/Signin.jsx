@@ -20,7 +20,7 @@ function GoogleIcon() {
 
 function validate({ email, password }) {
   const errs = {}
-  if (!email.trim())                    errs.email    = 'Email is required.'
+  if (!email.trim())                    errs.email    = 'Email address is required.'
   else if (!/\S+@\S+\.\S+/.test(email)) errs.email    = 'Enter a valid email address.'
   if (!password)                        errs.password = 'Password is required.'
   else if (password.length < 6)         errs.password = 'Password must be at least 6 characters.'
@@ -53,8 +53,10 @@ export default function Signin() {
     setLoading(true)
     try {
       const loginData = await loginUser(form.email.trim(), form.password)
-      const name = form.email.split('@')[0]
-      login({ name, email: form.email.trim(), token: loginData.access_token })
+      const raw = form.email.split('@')[0]
+      const cleanName = raw.split('.')[0].replace(/[0-9]/g, '')
+      const formattedName = cleanName ? cleanName.charAt(0).toUpperCase() + cleanName.slice(1) : 'User'
+      login({ name: formattedName, email: form.email.trim(), token: loginData.access_token })
       redirectAfterLogin()
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Sign-in failed. Check your credentials.'
@@ -68,7 +70,7 @@ export default function Signin() {
     setGoogleLoading(true)
     try {
       await new Promise(r => setTimeout(r, 600))
-      login({ name: 'Google User', email: 'google.user@example.com', token: 'demo_google_token' })
+      login({ name: 'Abhinay Kota', email: 'abhinaykota5183509@gmail.com', token: 'demo_google_token' })
       redirectAfterLogin()
     } catch {
       setErrors({ submit: 'Google sign-in failed. Please try again.' })
