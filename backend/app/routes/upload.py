@@ -79,13 +79,13 @@ async def upload_document(
         if is_convertible(original_filename):
             try:
                 user_converted_dir = os.path.join(CONVERTED_DIR, user_id, document_id)
-                pdf_path = convert_to_pdf(saved_path, user_converted_dir)
+                pdf_path = await asyncio.to_thread(convert_to_pdf, saved_path, user_converted_dir)
                 pdf_url = _file_url(pdf_path)
             except RuntimeError as e:
                 logger.warning(f"[Upload] PDF conversion skipped: {e}")
 
         try:
-            documents = load_document(saved_path)
+            documents = await asyncio.to_thread(load_document, saved_path)
         except ImportError as e:
             raise HTTPException(status_code=501, detail=f"Dependency missing: {e}")
         except (RuntimeError, ValueError) as e:
@@ -96,7 +96,7 @@ async def upload_document(
             doc.metadata["user_id"] = user_id
             doc.metadata["document_id"] = document_id
 
-        chunks = chunk_documents(documents)
+        chunks = await asyncio.to_thread(chunk_documents, documents)
         if not chunks:
             raise HTTPException(
                 status_code=422,
@@ -106,24 +106,21 @@ async def upload_document(
                 ),
             )
 
-        # High-Speed Vector & BM25 Indexing
-        add_documents_to_vectorstore(
-            chunks, user_id=user_id, document_id=document_id,
-        )
+        # Offload heavy FAISS & BM25 vector indexing to worker thread so asyncio event loop never freezes
+        await asyncio.to_thread(add_documents_to_vectorstore, chunks, user_id, document_id)
 
         try:
             from app.services.hybrid_retriever import save_bm25_index
-            save_bm25_index(chunks, user_id=user_id, document_id=document_id)
+            await asyncio.to_thread(save_bm25_index, chunks, user_id, document_id)
         except Exception as e:
             logger.warning(f"[Upload] BM25 indexing skipped: {e}")
 
-        # Fast Summary Intelligence
         from app.services.summarizer import generate_document_intelligence
         doc_intel = generate_document_intelligence(chunks)
 
         chat_id = "chat_" + document_id[4:]
 
-        # Fast background Mongo persistence (never blocks the upload response)
+        # Fast background Mongo persistence
         async def _persist_bg():
             try:
                 from app.services.memory import create_chat
