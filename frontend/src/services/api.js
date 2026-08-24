@@ -63,15 +63,19 @@ export async function uploadDocument(file, onProgress) {
   const formData = new FormData()
   formData.append('file', file)
 
+  const fileSize = file.size || 1
+
   const response = await api.post('/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (progressEvent) => {
-      if (onProgress && progressEvent.total) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+      if (onProgress) {
+        const total = progressEvent.total || fileSize
+        const percent = Math.min(99, Math.round((progressEvent.loaded * 100) / total))
         onProgress(percent)
       }
     },
   })
+  if (onProgress) onProgress(100)
   return response.data
 }
 

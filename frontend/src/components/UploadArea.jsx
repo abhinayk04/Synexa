@@ -49,11 +49,11 @@ export default function UploadArea() {
 
     setSelectedFile(file)
     setStatus('uploading')
-    setProgress(0)
+    setProgress(20)   // Instant initial feedback so progress is never stuck at 0%
     setErrorMsg('')
 
     try {
-      const data = await uploadDocument(file, (pct) => setProgress(pct))
+      const data = await uploadDocument(file, (pct) => setProgress(Math.max(20, pct)))
 
       if (!data?.document_id) {
         throw new Error('Unexpected response from server — missing document_id.')
@@ -71,9 +71,10 @@ export default function UploadArea() {
         pdfUrl:     data.pdf_url  ?? null,   
       })
 
+      setProgress(100)
       setStatus('success')
-      // Instant seamless navigation to chat
-      setTimeout(() => navigate('/chat'), 200)
+      // Instant 150ms navigation redirect to chat workspace
+      setTimeout(() => navigate('/chat'), 150)
 
     } catch (err) {
       console.error('[UploadArea] upload error:', err)
@@ -101,7 +102,7 @@ export default function UploadArea() {
   }
 
   return (
-    <div className="w-full max-w-xl mx-auto">
+    <div className="w-full max-w-xl mx-auto select-none">
       <AnimatePresence mode="wait">
 
         {/* ── Idle / Error Dropzone ─────────────────────────────── */}
@@ -206,7 +207,7 @@ export default function UploadArea() {
               <div className="h-2 bg-navy-900 rounded-full overflow-hidden p-0.5 border border-white/[0.06]">
                 <motion.div
                   animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.3 }}
+                  transition={{ duration: 0.2 }}
                   className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 rounded-full shadow-lg shadow-blue-500/50"
                 />
               </div>
@@ -230,7 +231,7 @@ export default function UploadArea() {
             </p>
             <p className="text-xs text-slate-300 mt-1">{selectedFile?.name}</p>
             <p className="text-xs text-slate-400 font-mono mt-4 flex items-center justify-center gap-2">
-              <Sparkles size={14} className="text-emerald-400" /> Redirecting to chat assistant…
+              <Sparkles size={14} className="text-emerald-400" /> Opening chat assistant…
             </p>
           </motion.div>
         )}
