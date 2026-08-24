@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain, LogOut, Settings as SettingsIcon, User } from 'lucide-react'
+import { Zap, FileText, Search, Shield, ArrowRight, Star, MessageSquare, Brain, LogOut, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import SettingsModal from '../components/SettingsModal'
+import AccountDrawer from '../components/AccountDrawer'
 
 const FEATURES = [
   {
@@ -36,9 +36,8 @@ const STEPS = [
 
 export default function Landing() {
   const navigate = useNavigate()
-  const { isLoggedIn, logout, displayName, user } = useAuth()
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState('profile')
+  const { isLoggedIn, displayName } = useAuth()
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const handleStartChat = () => {
     if (isLoggedIn) {
@@ -48,18 +47,13 @@ export default function Landing() {
     }
   }
 
-  const openSettings = (tab = 'profile') => {
-    setSettingsTab(tab)
-    setSettingsOpen(true)
-  }
-
   return (
     <div className="min-h-screen bg-navy-900 overflow-x-hidden">
       {/* Background grid */}
       <div className="fixed inset-0 bg-grid-pattern bg-grid opacity-40 pointer-events-none" />
       <div className="fixed inset-0 bg-hero-gradient pointer-events-none" />
 
-      {/* Modern Top Navbar */}
+      {/* Clean Top Navbar */}
       <nav className="relative z-10 flex items-center justify-between px-6 md:px-10 py-5 max-w-7xl mx-auto border-b border-white/[0.06]">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
           <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/30 p-1.5 shadow-lg shadow-blue-500/10">
@@ -72,23 +66,16 @@ export default function Landing() {
 
         <div className="flex items-center gap-3">
           {isLoggedIn ? (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
+              {/* Profile Avatar Button -> Opens Account Drawer */}
               <button
-                onClick={() => openSettings('appearance')}
-                className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 hover:text-white transition-colors"
-                title="Settings & Themes"
+                onClick={() => setDrawerOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-all cursor-pointer"
               >
-                <SettingsIcon size={16} />
-              </button>
-
-              <button
-                onClick={() => openSettings('profile')}
-                className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] transition-colors"
-              >
-                <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-bold text-white">
+                <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[11px] font-bold text-white">
                   {displayName ? displayName.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <span className="text-xs text-slate-300 font-medium">{displayName}</span>
+                <span className="text-xs text-slate-300 font-medium hidden sm:inline">{displayName}</span>
               </button>
 
               <button
@@ -97,35 +84,16 @@ export default function Landing() {
               >
                 Dashboard
               </button>
-
-              <button
-                onClick={() => {
-                  logout()
-                  navigate('/')
-                }}
-                className="btn-ghost text-xs text-slate-400 hover:text-red-400 p-2"
-                title="Sign Out"
-              >
-                <LogOut size={16} />
-              </button>
             </div>
           ) : (
+            /* Clean Logged-Out Navbar: ONLY Sign In + Get Started */
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => openSettings('appearance')}
-                className="p-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 hover:text-white transition-colors"
-                title="Themes & Appearance"
-              >
-                <SettingsIcon size={16} />
-              </button>
-
               <button
                 onClick={() => navigate('/signin')}
                 className="btn-ghost text-xs sm:text-sm px-4 py-2 font-medium"
               >
                 Sign In
               </button>
-
               <button
                 onClick={() => navigate('/signup')}
                 className="btn-primary text-xs sm:text-sm px-4 py-2"
@@ -181,7 +149,6 @@ export default function Landing() {
           className="mt-16 w-full max-w-2xl"
         >
           <div className="bg-navy-800 border border-white/10 rounded-2xl overflow-hidden shadow-2xl shadow-black/80">
-            {/* Browser Header Chrome */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-navy-900/80 backdrop-blur-md">
               <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
               <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
@@ -190,7 +157,6 @@ export default function Landing() {
                 localhost:5173/chat
               </div>
             </div>
-            {/* Chat Preview */}
             <div className="p-6 space-y-4 text-left">
               <FakeChatMessage role="user" text="What are the key skills of the candidate?" />
               <FakeChatMessage
@@ -277,7 +243,8 @@ export default function Landing() {
         </motion.div>
       </section>
 
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
+      {/* Sliding Account Drawer */}
+      <AccountDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   )
 }
@@ -292,7 +259,7 @@ function FakeChatMessage({ role, text, sources, confidence }) {
       <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-xs leading-relaxed shadow-md
         ${role === 'user' ? 'bg-blue-600 text-white rounded-tr-xs' : 'bg-navy-700 text-slate-200 rounded-tl-xs border border-white/5'}`}
       >
-        <p dangerouslySetInnerHTML={{ __html: text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+        <p dangerouslySetInnerHTML={{ __html: text.replace(/\*\*(.*?)\*\*/g, '<strong>$1$</strong>') }} />
         {sources && (
           <div className="mt-2.5 flex items-center gap-2 border-t border-white/10 pt-2">
             {sources.map((s, i) => (

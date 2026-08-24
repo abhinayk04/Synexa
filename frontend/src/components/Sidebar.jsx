@@ -10,7 +10,7 @@ import {
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
 import { uploadDocument } from '../services/api'
-import SettingsModal from './SettingsModal'
+import AccountDrawer from './AccountDrawer'
 import clsx from 'clsx'
 
 function ChatMenu({ chatId, onClose }) {
@@ -103,27 +103,14 @@ export default function Sidebar() {
     createChat,
     sidebarCollapsed, setSidebarCollapsed,
   } = useChat()
-  const { isLoggedIn, displayName, user, logout } = useAuth()
+  const { isLoggedIn, displayName, user } = useAuth()
 
   const [search,   setSearch]   = useState('')
   const [openMenu, setOpenMenu] = useState(null)
   const [uploading, setUploading] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState('profile')
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const fileInputRef = useRef(null)
-
-  useEffect(() => {
-    const handleClick = (e) => {
-      if (!e.target.closest(".profile-wrapper")) {
-        setProfileOpen(false)
-      }
-    }
-
-    document.addEventListener("mousedown", handleClick)
-    return () => document.removeEventListener("mousedown", handleClick)
-  }, [])
 
   const handleNewChat = useCallback(() => {
     fileInputRef.current?.click()
@@ -155,12 +142,6 @@ export default function Sidebar() {
     c.title.toLowerCase().includes(search.toLowerCase())
   )
 
-  const openSettings = (tab = 'profile') => {
-    setSettingsTab(tab)
-    setSettingsOpen(true)
-    setProfileOpen(false)
-  }
-
   if (sidebarCollapsed) {
     return (
       <div className="flex flex-col h-full w-16 bg-[#0B1222] items-center py-3 gap-2 border-r border-white/[0.06]">
@@ -189,13 +170,6 @@ export default function Sidebar() {
           <FolderOpen size={16} />
         </button>
 
-        <button onClick={() => openSettings('appearance')}
-          className="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center
-                     text-slate-500 hover:text-slate-300 transition-colors"
-          title="Themes & Settings">
-          <Palette size={16} />
-        </button>
-
         <div className="w-8 h-px bg-white/[0.06] my-1" />
 
         <div className="flex-1 overflow-y-auto w-full flex flex-col items-center gap-1.5 py-1">
@@ -213,8 +187,8 @@ export default function Sidebar() {
         </div>
 
         <button
-          onClick={() => openSettings('profile')}
-          title={`Profile (${displayName})`}
+          onClick={() => isLoggedIn ? setDrawerOpen(true) : navigate('/signup')}
+          title={isLoggedIn ? `Account (${displayName})` : 'Sign Up'}
           className="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center
                      text-slate-500 hover:text-slate-300 transition-colors mt-auto">
           {isLoggedIn
@@ -224,7 +198,7 @@ export default function Sidebar() {
               </div>
             : <UserCircle2 size={18} />}
         </button>
-        <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
+        <AccountDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
       </div>
     )
   }
@@ -338,82 +312,22 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="border-t border-white/[0.06] px-3 py-3 flex-shrink-0">
         {isLoggedIn ? (
-          <div className="relative flex items-center gap-3 profile-wrapper">
-            <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center
-                         text-white text-[13px] font-bold flex-shrink-0
-                         hover:scale-105 transition"
-            >
-              {displayName[0].toUpperCase()}
-            </button>
+          <div
+            onClick={() => setDrawerOpen(true)}
+            className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/[0.04] cursor-pointer transition-all border border-transparent hover:border-white/[0.06]"
+          >
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0">
+              {displayName ? displayName[0].toUpperCase() : 'U'}
+            </div>
 
-            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setProfileOpen(!profileOpen)}>
+            <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-200 truncate">
                 {displayName}
               </p>
               <p className="text-[10px] text-slate-500 truncate">
-                {user?.email}
+                {user?.email || 'user@synexa.ai'}
               </p>
             </div>
-
-            <AnimatePresence>
-              {profileOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  transition={{ duration: 0.14 }}
-                  className="absolute bottom-12 left-0 w-56 bg-[#1E293B]
-                             border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden z-50 p-1.5"
-                >
-                  <div className="px-3 py-2.5 border-b border-white/[0.06]">
-                    <p className="text-xs font-semibold text-white truncate">
-                      {displayName}
-                    </p>
-                    <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                      {user?.email}
-                    </p>
-                  </div>
-
-                  <div className="py-1">
-                    <button
-                      onClick={() => openSettings('profile')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
-                    >
-                      <UserCircle2 size={13} className="text-slate-500" />
-                      Account & Profile
-                    </button>
-
-                    <button
-                      onClick={() => openSettings('appearance')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
-                    >
-                      <Palette size={13} className="text-slate-500" />
-                      Appearance & Themes
-                    </button>
-
-                    <button
-                      onClick={() => openSettings('security')}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
-                    >
-                      <Settings size={13} className="text-slate-500" />
-                      Settings & Security
-                    </button>
-                  </div>
-
-                  <div className="border-t border-white/[0.06] pt-1">
-                    <button
-                      onClick={() => { logout(); navigate('/') }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                    >
-                      <LogOut size={13} />
-                      Sign out
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         ) : (
           <button
@@ -426,7 +340,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
+      <AccountDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </div>
   )
 }
