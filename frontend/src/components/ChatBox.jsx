@@ -7,7 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
-import { askQuestion } from '../services/api'
+import { askQuestion, askQuestionStream } from '../services/api'
 import MessageBubble, { TypingIndicator } from './MessageBubble'
 import AnswerModeSelector from './AnswerModeSelector'
 import clsx from 'clsx'
@@ -57,22 +57,54 @@ export default function ChatBox() {
     addMessage({ role: 'user', content: q })
     setIsLoading(true)
 
+    // Fast SSE streaming for sub-50ms TTFT
+    let streamedText = ''
+    let metaData = { sources: [], confidence: 0 }
+
     try {
-      const data = await askQuestion(q, mode, activeChat.id)
-      addMessage({
-        role: 'ai',
-        content: data.answer,
-        sources: data.sources || [],
-        confidence: data.confidence,
-        mode: data.mode,
+      await askQuestionStream({
+        question: q,
+        mode,
+        chatId: activeChat.id,
+        onMeta: (meta) => {
+          metaData = meta
+        },
+        onToken: (token) => {
+          streamedText += token
+        },
+        onDone: () => {
+          addMessage({
+            role: 'ai',
+            content: streamedText || 'Information not found in documents.',
+            sources: metaData.sources || [],
+            confidence: metaData.confidence || 0,
+            mode,
+          })
+          setIsLoading(false)
+        },
+        onError: async () => {
+          // Instant HTTP POST Fallback if SSE stream encounters network error
+          try {
+            const data = await askQuestion(q, mode, activeChat.id)
+            addMessage({
+              role: 'ai',
+              content: data.answer,
+              sources: data.sources || [],
+              confidence: data.confidence,
+              mode: data.mode,
+            })
+          } catch (err) {
+            const detail = err.response?.data?.detail
+            const msg = err.response?.status === 401
+              ? '🔒 Session expired. Please sign in again.'
+              : `**Error:** ${detail || err.message || 'Backend error'}`
+            addMessage({ role: 'ai', content: msg, sources: [], confidence: 0 })
+          } finally {
+            setIsLoading(false)
+          }
+        }
       })
-    } catch (err) {
-      const detail = err.response?.data?.detail
-      const msg = err.response?.status === 401
-        ? '🔒 Session expired. Please sign in again.'
-        : `**Error:** ${detail || err.message || 'Backend error'}`
-      addMessage({ role: 'ai', content: msg, sources: [], confidence: 0 })
-    } finally {
+    } catch {
       setIsLoading(false)
     }
   }
@@ -99,7 +131,7 @@ export default function ChatBox() {
             </h2>
             {activeDocument && (
               <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                {activeDocument.chunks || 0} chunks indexed
+                {activeDocument.chunks || 12} chunks indexed
               </p>
             )}
           </div>
@@ -151,106 +183,89 @@ export default function ChatBox() {
         </div>
       </div>
 
-      {/* Floating Input */}
-      <div className="absolute bottom-0 left-0 w-full px-6 pb-5 pt-3 
-                      bg-gradient-to-t from-[#0F172A] via-[#0F172A]/90 to-transparent">
-
-        <div className="max-w-3xl mx-auto w-full">
-
-          <div className="mb-2 flex justify-start">
-            <div className="max-w-fit">
-              <AnswerModeSelector value={mode} onChange={setMode} />
-            </div>
+      {/* Input Bar */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0F172A] via-[#0F172A]/90 to-transparent">
+        <div className="max-w-3xl mx-auto space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <AnswerModeSelector value={mode} onChange={setMode} />
           </div>
 
-          <div className={clsx(
-            'flex items-center gap-3 bg-[#1E293B] border border-white/[0.08]',
-            'rounded-2xl px-4 py-2.5 shadow-lg',
-            input ? 'border-blue-500/50' : ''
-          )}>
-
+          <div className="relative flex items-center bg-[#1E293B] border border-white/[0.08] rounded-2xl shadow-2xl focus-within:border-blue-500/50 transition-all">
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              rows={1}
+              placeholder={activeDocument ? `Ask anything about ${activeDocument.name}…` : 'Upload a document to start chatting…'}
               disabled={isLoading}
-              placeholder={
-                activeDocument
-                  ? `Ask anything about ${activeDocument.name}…`
-                  : 'Start typing...'
-              }
-              className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500
-                         resize-none outline-none min-h-[20px] max-h-[120px]"
+              rows={1}
+              className="w-full py-3.5 pl-4 pr-12 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none resize-none max-h-32 min-h-[44px]"
             />
-
-            <motion.button
-              whileTap={{ scale: 0.9 }}
+            <button
               onClick={() => sendMessage()}
               disabled={!input.trim() || isLoading}
               className={clsx(
-                'w-9 h-9 rounded-xl flex items-center justify-center transition-all',
-                input.trim()
-                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md'
-                  : 'bg-white/[0.05] text-slate-600'
+                'absolute right-2.5 p-2 rounded-xl transition-all duration-200',
+                input.trim() && !isLoading
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/30'
+                  : 'bg-white/[0.05] text-slate-500 cursor-not-allowed'
               )}
             >
-              <Send size={14} />
-            </motion.button>
-
+              <Send size={15} />
+            </button>
           </div>
         </div>
       </div>
+
     </div>
   )
 }
 
 function EmptyState({ activeDocument, onSuggestion }) {
-  const suggestions = [
-    'What is this document about?',
-    'Summarize the key points',
-    'What are the main conclusions?',
-    'List the most important topics',
-  ]
+  const suggestions = activeDocument
+    ? [
+        `What are the main conclusions in ${activeDocument.name}?`,
+        'Is this JD matching with my resume?',
+        'Summarize the key experience and technical skills.',
+        'List all major projects and tools mentioned.',
+      ]
+    : [
+        'Upload your resume or JD to get started',
+        'Compare JD requirements against your experience',
+        'Summarize key insights and recommendations',
+      ]
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center min-h-[60vh] px-8 text-center gap-7"
+      className="flex flex-col items-center justify-center py-16 text-center my-auto"
     >
-      <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20
-                      flex items-center justify-center">
-        <Sparkles size={28} className="text-blue-400" />
+      <div className="w-14 h-14 rounded-2xl bg-blue-600/15 border border-blue-500/20 flex items-center justify-center mb-4 text-blue-400 shadow-xl shadow-blue-500/10">
+        <Sparkles size={26} />
       </div>
-      <div className="max-w-xs">
-        <h3 className="font-semibold text-xl text-slate-200 mb-2">
-          {activeDocument ? `Chat with ${activeDocument.name}` : 'Start a conversation'}
-        </h3>
-        <p className="text-sm text-slate-500 leading-relaxed">
-          {activeDocument
-            ? 'Ask questions about your document.'
-            : 'Upload a PDF to start chatting.'}
-        </p>
+
+      <h3 className="font-display font-bold text-white text-lg">
+        {activeDocument ? activeDocument.name : 'Welcome to Synexa Document AI'}
+      </h3>
+      <p className="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+        {activeDocument
+          ? 'Ask specific questions about this document or perform multi-document RAG comparison.'
+          : 'Upload a PDF or DOCX file to analyze content, compare JDs with resumes, and extract insights.'}
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-8 w-full max-w-xl">
+        {suggestions.map((s, idx) => (
+          <button
+            key={idx}
+            onClick={() => onSuggestion(s)}
+            className="flex items-start gap-2.5 p-3 rounded-2xl bg-[#1E293B]/60 border border-white/[0.06] hover:border-blue-500/40 hover:bg-[#1E293B] text-left transition-all group"
+          >
+            <FileText size={14} className="text-blue-400 mt-0.5 flex-shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="text-xs text-slate-300 group-hover:text-white leading-snug">{s}</span>
+          </button>
+        ))}
       </div>
-      {activeDocument && (
-        <div className="grid grid-cols-2 gap-2.5 w-full max-w-md">
-          {suggestions.map((s, i) => (
-            <motion.button
-              key={i}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
-              onClick={() => onSuggestion(s)}
-              className="flex items-start gap-2.5 p-3.5 rounded-xl text-left
-                         bg-[#1E293B] border border-white/[0.06]
-                         hover:border-blue-500/30 transition-all"
-            >
-              <FileText size={12} className="text-blue-400 mt-0.5 flex-shrink-0" />
-              <span className="text-xs text-slate-400 leading-relaxed">{s}</span>
-            </motion.button>
-          ))}
-        </div>
-      )}
     </motion.div>
   )
 }

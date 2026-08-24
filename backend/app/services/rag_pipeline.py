@@ -143,7 +143,7 @@ async def run_rag_pipeline(
     user_id: str = "default",
     document_id: str = "default",
 ) -> Dict[str, Any]:
-    """Standard non-streaming RAG execution with multilingual and code-switching support."""
+    """High-Speed Parallel RAG Execution Pipeline."""
     resolved_chat_id = chat_id
 
     if chat_id:
@@ -162,16 +162,23 @@ async def run_rag_pipeline(
 
     expanded_queries = generate_query_expansions(question)
     
-    all_candidates: List[Tuple[Document, float]] = []
-    seen_keys: set = set()
-
-    for query_var in expanded_queries:
-        candidates = hybrid_retrieve(
-            query_var,
+    # Ultra-Fast Parallel Retrieval across all expansions
+    async def _fetch_candidates(q_var: str):
+        return await asyncio.to_thread(
+            hybrid_retrieve,
+            q_var,
             user_id=user_id,
             document_id=document_id,
             top_k=settings.TOP_K_RESULTS * 2,
         )
+
+    retrieval_tasks = [_fetch_candidates(q_var) for q_var in expanded_queries]
+    retrieval_results = await asyncio.gather(*retrieval_tasks)
+
+    all_candidates: List[Tuple[Document, float]] = []
+    seen_keys: set = set()
+
+    for candidates in retrieval_results:
         for doc, score in candidates:
             doc_key = doc.metadata.get("chunk_id", doc.page_content[:100])
             if doc_key not in seen_keys:
@@ -191,7 +198,9 @@ async def run_rag_pipeline(
             "highlight_text": "",
         }
 
-    reranked = rerank_documents(
+    # Parallel Reranking in background thread
+    reranked = await asyncio.to_thread(
+        rerank_documents,
         query=question,
         candidates=all_candidates,
         top_k=settings.TOP_K_RESULTS,
@@ -209,10 +218,10 @@ async def run_rag_pipeline(
 
     llm = get_llm()
     try:
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = await asyncio.to_thread(llm.invoke, [HumanMessage(content=prompt)])
         answer = response.content if hasattr(response, "content") else str(response)
     except Exception:
-        answer = str(llm.invoke(prompt))
+        answer = str(await asyncio.to_thread(llm.invoke, prompt))
 
     answer = answer.strip()
 
@@ -227,7 +236,7 @@ async def run_rag_pipeline(
         highlight_text = ""
 
     if resolved_chat_id:
-        await _save_pair_to_chat(resolved_chat_id, question, answer)
+        asyncio.create_task(_save_pair_to_chat(resolved_chat_id, question, answer))
 
     return {
         "answer": answer,
@@ -264,7 +273,7 @@ async def stream_rag_pipeline(
         "chat_id": rag_res["chat_id"],
     }
     yield f"data: {json.dumps(meta_frame)}\n\n"
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.005)
 
     full_answer = rag_res["answer"]
 
@@ -273,6 +282,6 @@ async def stream_rag_pipeline(
         chunk_text = word + (" " if idx < len(words) - 1 else "")
         token_frame = {"type": "token", "content": chunk_text}
         yield f"data: {json.dumps(token_frame)}\n\n"
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.005)
 
     yield "data: [DONE]\n\n"
