@@ -113,8 +113,9 @@ export default function Sidebar() {
   const fileInputRef = useRef(null)
 
   const handleNewChat = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
+    navigate('/upload')
+  }, [navigate])
+
 
   const handleFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0]

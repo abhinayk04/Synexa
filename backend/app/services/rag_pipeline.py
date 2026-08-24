@@ -7,12 +7,12 @@ from typing import Dict, Any, List, Tuple, AsyncGenerator
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 
-
 from app.config import settings
 from app.services.hybrid_retriever import hybrid_retrieve
 from app.services.reranker import rerank_documents
 from app.services.qa_engine import get_llm
 from app.services.vector_store import resolve_document_id
+from app.services.query_transform import generate_query_expansions
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,9 @@ STRICT RULES — follow without exception:
 2. DO NOT use any prior knowledge or training data.
 3. DO NOT generate code, formulas, or examples unless they appear word-for-word in the context.
 4. If the answer is not found in the context, respond with EXACTLY: "Information not found in documents."
-5. DO NOT guess, infer, or make up any information.\
+5. DO NOT guess, infer, or make up any information.
+6. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish (Telugu written in Roman script e.g. "ee document lo candidate experience entha?"), Hinglish (Hindi written in Roman script e.g. "is document me candidate ka experience kya hai?"), or any regional/local language, ALWAYS reply in that EXACT SAME language, dialect, and script!
+7. Keep answers factual and precise based strictly on the Context provided.\
 """
 
 PROMPT_TEMPLATES = {
@@ -37,7 +39,7 @@ PROMPT_TEMPLATES = {
 
 Question: {question}
 
-Answer (from context only):""",
+Answer (from context only, in the same language as question):""",
 
     "detailed": """\
 {rules}
@@ -47,7 +49,7 @@ Answer (from context only):""",
 
 Question: {question}
 
-Detailed Answer (from context only):""",
+Detailed Answer (from context only, in the same language as question):""",
 
     "exam": """\
 {rules}
@@ -61,7 +63,7 @@ Structure as:
 
 Question: {question}
 
-Exam-Style Answer (from context only):""",
+Exam-Style Answer (from context only, in the same language as question):""",
 }
 
 
@@ -74,7 +76,6 @@ def _build_context_and_sources(
     scores: List[float] = []
 
     for doc, score in results:
-        # Parent-Child Hierarchical Context Reconstruction
         passage_text = doc.metadata.get("parent_text", doc.page_content.strip())
         context_parts.append(passage_text)
         scores.append(score)
@@ -128,7 +129,7 @@ async def run_rag_pipeline(
     user_id: str = "default",
     document_id: str = "default",
 ) -> Dict[str, Any]:
-    """Standard non-streaming RAG execution."""
+    """Standard non-streaming RAG execution with multilingual and code-switching support."""
     resolved_chat_id = chat_id
 
     if chat_id:
@@ -144,15 +145,26 @@ async def run_rag_pipeline(
 
     history_str = await _load_history_for_chat(resolved_chat_id) if resolved_chat_id else ""
 
-    # 1. Hybrid Search (FAISS + BM25 + Reciprocal Rank Fusion)
-    candidates = hybrid_retrieve(
-        question,
-        user_id=user_id,
-        document_id=document_id,
-        top_k=settings.TOP_K_RESULTS * 2,
-    )
+    # 1. Multilingual Query Expansion (Translates Telglish/Hinglish to English for vector matching)
+    expanded_queries = generate_query_expansions(question)
+    
+    all_candidates: List[Tuple[Document, float]] = []
+    seen_keys: set = set()
 
-    if not candidates:
+    for query_var in expanded_queries:
+        candidates = hybrid_retrieve(
+            query_var,
+            user_id=user_id,
+            document_id=document_id,
+            top_k=settings.TOP_K_RESULTS * 2,
+        )
+        for doc, score in candidates:
+            doc_key = doc.metadata.get("chunk_id", doc.page_content[:100])
+            if doc_key not in seen_keys:
+                seen_keys.add(doc_key)
+                all_candidates.append((doc, score))
+
+    if not all_candidates:
         if resolved_chat_id:
             await _save_pair_to_chat(resolved_chat_id, question, NOT_FOUND)
         return {
@@ -168,13 +180,13 @@ async def run_rag_pipeline(
     # 2. Two-Stage Cross-Encoder Reranking
     reranked = rerank_documents(
         query=question,
-        candidates=candidates,
+        candidates=all_candidates,
         top_k=settings.TOP_K_RESULTS,
     )
 
     filtered = [(d, s) for d, s in reranked if s >= SIMILARITY_THRESHOLD]
     if not filtered:
-        filtered = reranked[:2]  # Fallback to top 2 candidates if below threshold
+        filtered = reranked[:2]
 
     context, sources, scores = _build_context_and_sources(filtered)
     confidence = round(sum(scores) / len(scores), 4) if scores else 0.0
@@ -223,7 +235,6 @@ async def stream_rag_pipeline(
     document_id: str = "default",
 ) -> AsyncGenerator[str, None]:
     """Server-Sent Events (SSE) streaming generator yielding word-by-word token payloads."""
-    # First get context & sources
     rag_res = await run_rag_pipeline(
         question=question,
         mode=mode,
@@ -232,7 +243,6 @@ async def stream_rag_pipeline(
         document_id=document_id,
     )
 
-    # Initial metadata frame
     meta_frame = {
         "type": "meta",
         "sources": rag_res["sources"],
@@ -245,13 +255,11 @@ async def stream_rag_pipeline(
 
     full_answer = rag_res["answer"]
 
-    # Stream answer tokens word by word
     words = full_answer.split(" ")
     for idx, word in enumerate(words):
         chunk_text = word + (" " if idx < len(words) - 1 else "")
         token_frame = {"type": "token", "content": chunk_text}
         yield f"data: {json.dumps(token_frame)}\n\n"
-        await asyncio.sleep(0.02)  # Simulate smooth typewriter effect
+        await asyncio.sleep(0.02)
 
-    # Final completion frame
     yield "data: [DONE]\n\n"
