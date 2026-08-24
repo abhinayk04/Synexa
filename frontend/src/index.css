@@ -2,15 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+:root, html[data-theme="midnight"] {
+  --bg-main: #0F172A;
+  --bg-card: #1E293B;
+  --bg-nav: #0B1120;
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --accent: #3B82F6;
+  --accent-hover: #2563EB;
+  --border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="violet"] {
+  --bg-main: #110C26;
+  --bg-card: #1D153A;
+  --bg-nav: #0A071B;
+  --text-main: #F3F0FF;
+  --text-muted: #A78BFA;
+  --accent: #8B5CF6;
+  --accent-hover: #7C3AED;
+  --border-color: rgba(139, 92, 246, 0.15);
+}
+
+html[data-theme="emerald"] {
+  --bg-main: #061912;
+  --bg-card: #0D2C21;
+  --bg-nav: #030F0A;
+  --text-main: #ECFDF5;
+  --text-muted: #6EE7B7;
+  --accent: #10B981;
+  --accent-hover: #059669;
+  --border-color: rgba(16, 185, 129, 0.15);
+}
+
+html[data-theme="light"] {
+  --bg-main: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-nav: #F1F5F9;
+  --text-main: #0F172A;
+  --text-muted: #64748B;
+  --accent: #2563EB;
+  --accent-hover: #1D4ED8;
+  --border-color: rgba(0, 0, 0, 0.08);
+}
+
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
-
   html { scroll-behavior: smooth; }
 
-  /* Always dark — no light mode */
   html, body {
-    background-color: #0F172A;
-    color: #F1F5F9;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   body {
@@ -28,15 +71,17 @@
 @layer components {
   /* Reusable card */
   .card {
-    @apply bg-[#1E293B] border border-white/[0.06] rounded-2xl p-5
-           transition-all duration-200 hover:border-white/10;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    @apply rounded-2xl p-5 transition-all duration-200 shadow-lg;
   }
 
   /* Primary button */
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-500 text-white font-semibold
+    background-color: var(--accent);
+    @apply hover:opacity-90 text-white font-semibold
            px-5 py-2.5 rounded-xl transition-all duration-200
-           hover:shadow-lg hover:shadow-blue-900/40 active:scale-[0.97];
+           hover:shadow-lg active:scale-[0.97];
   }
 
   /* Ghost button */
@@ -47,24 +92,16 @@
 
   /* Badge pill */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
-           font-mono bg-[#1E293B] text-slate-500 border border-white/[0.06];
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono text-slate-400;
   }
 }
 
 @layer utilities {
-  /* Blue gradient text */
+  /* Dynamic gradient text */
   .text-gradient {
-    @apply bg-gradient-to-r from-blue-400 via-sky-300 to-cyan-300
-           bg-clip-text text-transparent;
-  }
-
-  /* Subtle grid overlay for hero */
-  .bg-grid-overlay {
-    background-image:
-      linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
-    background-size: 40px 40px;
+    @apply bg-gradient-to-r from-blue-400 via-sky-300 to-cyan-300 bg-clip-text text-transparent;
   }
 }
 
@@ -75,21 +112,14 @@
   max-width: 100% !important;
 }
 
-/* Typing bounce animation */
-@keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30%            { transform: translateY(-6px); opacity: 1; }
-}
-
-/* Fix Chrome autofill white background */
+/* Fix Chrome autofill background */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0px 1000px #0F172A inset !important;
-  -webkit-text-fill-color: #ffffff !important;
-  caret-color: #ffffff;
+  -webkit-box-shadow: 0 0 0px 1000px var(--bg-main) inset !important;
+  -webkit-text-fill-color: var(--text-main) !important;
+  caret-color: var(--text-main);
   border-radius: 0.75rem;
-  transition: background-color 5000s ease-in-out 0s;
 }

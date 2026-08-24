@@ -5,11 +5,12 @@ import {
   Zap, Plus, FileText, MessageSquare,
   ChevronLeft, ChevronRight, Trash2,
   Search, Clock, LayoutDashboard, MoreHorizontal,
-  Pencil, Check, X, UserCircle2, FolderOpen,Settings,Bell,Shield,LogOut
+  Pencil, Check, X, UserCircle2, FolderOpen, Settings, Bell, Shield, LogOut
 } from 'lucide-react'
 import { useChat } from '../context/ChatContext'
 import { useAuth } from '../context/AuthContext'
 import { uploadDocument } from '../services/api'
+import ThemeToggle from './ThemeToggle'
 import clsx from 'clsx'
 
 function ChatMenu({ chatId, onClose }) {
@@ -35,16 +36,6 @@ function ChatMenu({ chatId, onClose }) {
     setRenaming(false)
     onClose()
   }
-  useEffect(() => {
-  const handleClick = (e) => {
-    if (!e.target.closest(".profile-wrapper")) {
-      setProfileOpen(false)
-    }
-  }
-
-  document.addEventListener("mousedown", handleClick)
-  return () => document.removeEventListener("mousedown", handleClick)
-}, [])
 
   return (
     <motion.div
@@ -118,8 +109,19 @@ export default function Sidebar() {
   const [openMenu, setOpenMenu] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  
+
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (!e.target.closest(".profile-wrapper")) {
+        setProfileOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
 
   const handleNewChat = useCallback(() => {
     fileInputRef.current?.click()
@@ -151,11 +153,9 @@ export default function Sidebar() {
     c.title.toLowerCase().includes(search.toLowerCase())
   )
 
-  
   if (sidebarCollapsed) {
     return (
-      <div className="flex flex-col h-full w-16 bg-[#0B1222] items-center py-3 gap-2">
-        {/* Hidden file input */}
+      <div className="flex flex-col h-full w-16 bg-[#0B1222] items-center py-3 gap-2 border-r border-white/[0.06]">
         <input ref={fileInputRef} type="file"
           accept=".pdf,.docx,.txt" className="hidden"
           onChange={handleFileChange} />
@@ -215,37 +215,35 @@ export default function Sidebar() {
 
   // ── Full sidebar ──────────────────────────────────────
   return (
-    <div className="flex flex-col h-full w-[260px] bg-[#0B1222] overflow-hidden select-none">
+    <div className="flex flex-col h-full w-[260px] bg-[#0B1222] border-r border-white/[0.06] overflow-hidden select-none">
       <input ref={fileInputRef} type="file"
         accept=".pdf,.docx,.txt" className="hidden"
         onChange={handleFileChange} />
 
       {/* Logo + collapse */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3
-                 flex-shrink-0">
-        <div className="flex items-center gap-1">
-          <div className="flex items-center justify-center">
-  <img src="/logo.png" alt="Synexa" className="w-8 h-8 object-contain" />
-</div>
-          <span className="text-gradient text-xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">Synexa</span>
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 flex-shrink-0">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 p-1">
+            <img src="/logo.png" alt="Synexa" className="w-full h-full object-contain" />
+          </div>
+          <span className="text-gradient text-xl font-bold tracking-wide drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+            Synexa
+          </span>
         </div>
         <button onClick={() => setSidebarCollapsed(true)}
-          className="p-1.5 rounded-lg hover:bg-white/5 text-slate-500
-                     hover:text-slate-300 transition-colors"
+          className="p-1.5 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors"
           title="Collapse sidebar">
           <ChevronLeft size={15} />
         </button>
       </div>
 
       {/* Action buttons */}
-      <div className="px-3 py-3 space-y-1 border-b border-white/[0.06] flex-shrink-0">
-
-        {/* New Chat → file picker */}
+      <div className="px-3 py-3 space-y-2 border-b border-white/[0.06] flex-shrink-0">
         <button onClick={handleNewChat} disabled={uploading}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm
-           font-medium bg-gradient-to-r from-blue-600 to-cyan-500
-           hover:from-blue-500 hover:to-cyan-400 text-white
-           transition-all shadow-lg shadow-blue-900/40 hover:scale-[1.02]">
+                     font-medium bg-gradient-to-r from-blue-600 to-cyan-500
+                     hover:from-blue-500 hover:to-cyan-400 text-white
+                     transition-all shadow-lg shadow-blue-900/40 hover:scale-[1.02]">
           <Plus size={15} />
           {uploading ? 'Uploading…' : 'New Chat'}
         </button>
@@ -258,10 +256,8 @@ export default function Sidebar() {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5 min-h-0"
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 min-h-0"
            style={{ scrollbarWidth: 'thin' }}>
-
-        {/* Search */}
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
           <input value={search} onChange={e => setSearch(e.target.value)}
@@ -271,11 +267,7 @@ export default function Sidebar() {
                        focus:outline-none focus:border-blue-500/40 transition-colors" />
         </div>
 
-        {/* ── SECTION 1: CHATS ───────────────────────────── */}
         <div>
-          <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest mb-2 px-1"></p>
-
-
           {filteredChats.length === 0 ? (
             <div className="flex flex-col items-center py-7 gap-2">
               <MessageSquare size={22} className="text-slate-700" />
@@ -289,7 +281,8 @@ export default function Sidebar() {
                 <div key={chat.id}
                   onClick={() => { switchChat(chat.id); navigate('/chat') }}
                   className={clsx(
-'group relative flex items-center gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 backdrop-blur-sm',                    activeChat?.id === chat.id
+                    'group relative flex items-center gap-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 backdrop-blur-sm',
+                    activeChat?.id === chat.id
                       ? 'bg-gradient-to-r from-blue-500/10 to-cyan-500/10 text-blue-400 border border-blue-500/30 shadow-sm'
                       : 'hover:bg-white/[0.04] text-slate-400 hover:text-slate-200'
                   )}>
@@ -326,119 +319,84 @@ export default function Sidebar() {
         </div>
       </div>
 
-    {/* Footer */}
-<div className="border-t border-white/[0.06] px-3 py-3 flex-shrink-0">
-  {isLoggedIn ? (
-    
-    <div className="relative flex items-center gap-3 profile-wrapper">
+      {/* Footer */}
+      <div className="border-t border-white/[0.06] px-3 py-3 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <ThemeToggle />
+        </div>
 
-      {/* Avatar Button */}
-      <button
-        onClick={() => setProfileOpen(!profileOpen)}
-        className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center
-                   text-white text-[13px] font-bold flex-shrink-0
-                   hover:scale-105 transition"
-      >
-        {displayName[0].toUpperCase()}
-      </button>
+        {isLoggedIn ? (
+          <div className="relative flex items-center gap-3 profile-wrapper">
+            <button
+              onClick={() => setProfileOpen(!profileOpen)}
+              className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center
+                         text-white text-[13px] font-bold flex-shrink-0
+                         hover:scale-105 transition"
+            >
+              {displayName[0].toUpperCase()}
+            </button>
 
-      {/* Name */}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-slate-200 truncate">
-          {displayName}
-        </p>
-        <p className="text-[10px] text-slate-600 truncate">
-          {user?.email}
-        </p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-slate-200 truncate">
+                {displayName}
+              </p>
+              <p className="text-[10px] text-slate-500 truncate">
+                {user?.email}
+              </p>
+            </div>
+
+            <AnimatePresence>
+              {profileOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.14 }}
+                  className="absolute bottom-12 left-0 w-56 bg-[#1E293B]
+                             border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden z-50 p-1.5"
+                >
+                  <div className="px-3 py-2.5 border-b border-white/[0.06]">
+                    <p className="text-xs font-semibold text-white truncate">
+                      {displayName}
+                    </p>
+                    <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                      {user?.email}
+                    </p>
+                  </div>
+
+                  <div className="py-1">
+                    <button
+                      onClick={() => navigate('/documents')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 rounded-xl transition-all"
+                    >
+                      <FolderOpen size={13} className="text-slate-500" />
+                      My Documents
+                    </button>
+                  </div>
+
+                  <div className="border-t border-white/[0.06] pt-1">
+                    <button
+                      onClick={() => { logout(); navigate('/') }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                    >
+                      <LogOut size={13} />
+                      Sign out
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ) : (
+          <button
+            onClick={() => navigate('/signup')}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl
+                       text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg"
+          >
+            Sign Up Free
+          </button>
+        )}
       </div>
-
-      {/* Dropdown */}
-      <AnimatePresence>
-  {profileOpen && (
-    <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-      transition={{ duration: 0.14 }}
-      className="absolute bottom-12 left-0 w-56 bg-[#1E293B]
-                 border border-white/[0.08] rounded-2xl shadow-xl overflow-hidden z-50"
-    >
-
-      {/* USER INFO */}
-      <div className="px-4 py-3.5 border-b border-white/[0.06]">
-        <p className="text-sm font-semibold text-white truncate">
-          {displayName}
-        </p>
-        <p className="text-[11px] text-slate-500 truncate mt-0.5">
-          {user?.email}
-        </p>
-      </div>
-
-      {/* MENU ITEMS */}
-      <div className="py-1.5">
-
-        <button
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm
-                     text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
-        >
-          <UserCircle2 size={14} className="text-slate-600" />
-          Account
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm
-                     text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
-        >
-          <Settings size={14} className="text-slate-600" />
-          Settings
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm
-                     text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
-        >
-          <Bell size={14} className="text-slate-600" />
-          Notifications
-        </button>
-
-        <button
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm
-                     text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
-        >
-          <Shield size={14} className="text-slate-600" />
-          Security
-        </button>
-
-      </div>
-
-      {/* LOGOUT */}
-      <div className="border-t border-white/[0.06] py-1.5">
-        <button
-          onClick={() => { logout(); navigate('/chat') }}
-          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm
-                     text-red-400 hover:bg-red-500/10 transition-all"
-        >
-          <LogOut size={14} />
-          Sign out
-        </button>
-      </div>
-
-    </motion.div>
-  )}
-</AnimatePresence>
-
-    </div>
-
-  ) : (
-    <button
-      onClick={() => navigate('/signup')}
-      className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl
-                 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white"
-    >
-      Sign Up Free
-    </button>
-  )}
-</div>
     </div>
   )
 }
