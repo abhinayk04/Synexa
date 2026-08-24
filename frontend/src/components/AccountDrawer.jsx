@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, User, Palette, Shield, LogOut, Check, Sparkles, Mail, Lock, ChevronRight } from 'lucide-react'
+import { X, User, Palette, LogOut, Check, Sparkles, Mail } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
@@ -126,23 +126,6 @@ export default function AccountDrawer({ isOpen, onClose }) {
                   <span className="text-xs font-bold text-white">{t.label}</span>
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* SECTION 3: Account Security */}
-          <div className="space-y-3">
-            <p className="text-[11px] font-mono text-slate-400 uppercase tracking-widest px-1">
-              Security
-            </p>
-
-            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Shield size={15} className="text-slate-400" />
-                <span className="text-xs text-slate-300">Session Protection</span>
-              </div>
-              <span className="text-[10px] font-mono bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-md font-semibold">
-                JWT Active
-              </span>
             </div>
           </div>
 
