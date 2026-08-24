@@ -36,9 +36,19 @@ class ViewerErrorBoundary extends Component {
 }
 
 export default function Chat() {
-  const { viewerOpen, setViewerOpen, sidebarCollapsed, activeChat } = useChat()
+  const { viewerOpen, setViewerOpen, sidebarCollapsed, activeChat, chats, switchChat } = useChat()
   const navigate = useNavigate()
 
+  // Auto-select most recent chat or redirect to upload if no active chat
+  useEffect(() => {
+    if (!activeChat && chats.length > 0) {
+      switchChat(chats[0].id)
+    } else if (!activeChat && chats.length === 0) {
+      navigate('/upload', { replace: true })
+    }
+  }, [activeChat, chats, switchChat, navigate])
+
+  // Auto-collapse viewer on narrow screens
   useEffect(() => {
     const handle = () => {
       if (window.innerWidth < 1200) setViewerOpen(false)
@@ -71,14 +81,7 @@ export default function Chat() {
           <ChatBox />
         ) : (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-            <p className="text-slate-400 font-medium">No active chat selected</p>
-            <p className="text-slate-600 text-xs">Upload a new document or pick a chat from the sidebar.</p>
-            <button
-              onClick={() => navigate('/upload')}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-900/40 transition-all"
-            >
-              Upload a Document
-            </button>
+            <p className="text-slate-400 font-medium">Loading chat workspace…</p>
           </div>
         )}
       </div>
