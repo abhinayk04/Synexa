@@ -321,56 +321,56 @@ export default function ChatBox() {
 function EmptyState({ activeDocument, selectedDocIds, onSuggestion }) {
   const suggestions = selectedDocIds.length > 0
     ? [
-        'Compare requirements across all selected documents',
-        'Summarize key differences and shared skills',
-        'What are the main technical takeaways from these files?',
-        'List all major projects and qualifications mentioned',
+        'Compare key topics across all selected documents',
+        'Summarize shared facts and key differences',
+        'What are the main conclusions across these files?',
+        'Synthesize an executive summary of selected documents',
       ]
     : (activeDocument
       ? [
-          `What are the main conclusions in ${activeDocument.name}?`,
-          'What noise models and noise removal methods are mentioned?',
-          'Summarize key experience and technical skills.',
-          'List all major projects and tools mentioned.',
+          'Provide a comprehensive summary of this document',
+          'What are the key takeaways and main objectives?',
+          'List all important requirements, facts, or topics mentioned',
+          'Explain the core concepts covered in this file',
         ]
       : [
-          'Upload your resume or JD to get started',
-          'Compare JD requirements against your experience',
-          'Summarize key insights and recommendations',
+          'Upload a PDF or document to start analyzing content',
+          'Summarize key insights and main recommendations',
+          'Extract core topics and important details from files',
         ])
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center py-16 text-center my-auto"
+      className="flex flex-col items-center justify-center py-12 text-center my-auto"
     >
       <div className="w-14 h-14 rounded-2xl bg-blue-600/15 border border-blue-500/20 flex items-center justify-center mb-4 text-blue-400 shadow-xl shadow-blue-500/10">
         <Sparkles size={26} />
       </div>
 
-      <h3 className="font-display font-bold text-white text-lg">
+      <h3 className="font-display font-bold text-white text-lg max-w-md truncate px-4">
         {selectedDocIds.length > 0
           ? `Multi-Document RAG Workspace (${selectedDocIds.length} files selected)`
           : (activeDocument ? activeDocument.name : 'Welcome to Synexa Document AI')}
       </h3>
-      <p className="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed">
+      <p className="text-xs text-slate-400 max-w-md mt-1.5 leading-relaxed px-4">
         {selectedDocIds.length > 0
           ? 'Asking questions will cross-reference and retrieve facts from all selected documents simultaneously.'
           : (activeDocument
-            ? 'Ask specific questions about this document or perform multi-document RAG comparison.'
-            : 'Upload a PDF or DOCX file to analyze content, compare JDs with resumes, and extract insights.')}
+            ? 'Ask specific questions about this document or select multiple files for Multi-Doc RAG.'
+            : 'Upload a PDF, DOCX, or presentation file to analyze content and extract insights.')}
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-8 w-full max-w-xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-8 w-full max-w-xl px-4">
         {suggestions.map((s, idx) => (
           <button
             key={idx}
             onClick={() => onSuggestion(s)}
-            className="flex items-start gap-2.5 p-3 rounded-2xl bg-[#1E293B]/60 border border-white/[0.06] hover:border-blue-500/40 hover:bg-[#1E293B] text-left transition-all group"
+            className="flex items-center gap-3 p-3.5 rounded-2xl bg-[#1E293B]/60 border border-white/[0.08] hover:border-blue-500/50 hover:bg-[#1E293B] text-left transition-all group shadow-sm hover:shadow-md hover:shadow-blue-500/5"
           >
-            <FileText size={14} className="text-blue-400 mt-0.5 flex-shrink-0 group-hover:scale-110 transition-transform" />
-            <span className="text-xs text-slate-300 group-hover:text-white leading-snug">{s}</span>
+            <FileText size={15} className="text-blue-400 flex-shrink-0 group-hover:scale-110 transition-transform" />
+            <span className="text-xs font-medium text-slate-300 group-hover:text-white leading-snug line-clamp-2">{s}</span>
           </button>
         ))}
       </div>
