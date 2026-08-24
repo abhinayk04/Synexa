@@ -23,11 +23,13 @@ class GeminiDirectLLM(LLM):
             genai.configure(api_key=self.api_key)
             model = genai.GenerativeModel("gemini-1.5-flash")
             response = model.generate_content(prompt)
-            return response.text.strip()
+            if response and response.text:
+                return response.text.strip()
         except Exception as e:
-            logger.warning(f"[GeminiDirectLLM] Direct call warning: {e}")
-            fallback = PureDocumentExtractiveLLM()
-            return fallback._call(prompt)
+            logger.warning(f"[GeminiDirectLLM] Direct API call warning: {e}")
+        
+        fallback = PureDocumentExtractiveLLM()
+        return fallback._call(prompt)
 
 
 class PureDocumentExtractiveLLM(LLM):
@@ -35,8 +37,8 @@ class PureDocumentExtractiveLLM(LLM):
     Strict 100% Document-Grounded Extractive RAG Engine.
     Exclusively parses, filters, and formats text from the CURRENT UPLOADED DOCUMENT context.
     - Zero hardcoded resume, project, or domain text.
-    - Normalizes PDF line breaks and word spacing (e.g. 'reconstructionto' -> 'reconstruction to').
-    - Dynamically matches question intent (Functions, Conclusions, Requirements, Details) against document passages.
+    - Normalizes PDF line breaks and word spacing.
+    - Dynamically matches question intent against document passages.
     """
 
     @property
@@ -46,7 +48,6 @@ class PureDocumentExtractiveLLM(LLM):
     def _clean_text(self, text: str) -> str:
         if not text:
             return ""
-        # Fix concatenated words from PDF line wraps
         cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
         cleaned = re.sub(r'([a-zA-Z])(\d+)', r'\1 \2', cleaned)
         cleaned = re.sub(r'(\d+)([a-zA-Z])', r'\1 \2', cleaned)
@@ -73,19 +74,32 @@ class PureDocumentExtractiveLLM(LLM):
             full_text = "\n\n".join(passages)
             raw_lines = [l.strip() for l in full_text.split("\n") if l.strip()]
 
-            # Deduplicate lines while filtering out short noise lines (< 15 chars)
+            # Deduplicate lines while filtering out short noise lines (< 10 chars)
             seen_lines = set()
             valid_lines = []
             for line in raw_lines:
                 line_lower = line.lower()
-                if line_lower not in seen_lines and len(line) >= 12:
+                if line_lower not in seen_lines and len(line) >= 8:
                     seen_lines.add(line_lower)
                     valid_lines.append(line)
 
             if not valid_lines:
                 return "Information not found in documents."
 
-            # ── 1. FUNCTIONS / FEATURES / METHODS / CAPABILITIES ──
+            # ── 1. OVERVIEW / SUMMARY / ABOUT / PDF QUERIES ──
+            overview_triggers = ["about", "summary", "overview", "pdf", "document", "what is this", "tell me", "explain", "details", "main", "content"]
+            if any(tr in raw_question for tr in overview_triggers):
+                output = ["### 📄 Document Overview & Summary:\n"]
+                for l in valid_lines[:8]:
+                    clean_l = self._clean_text(l.lstrip("•-* ").strip())
+                    if ":" in clean_l and not clean_l.startswith("•"):
+                        parts = clean_l.split(":", 1)
+                        output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
+                    else:
+                        output.append(f"• {clean_l}")
+                return "\n".join(output)
+
+            # ── 2. FUNCTIONS / FEATURES / METHODS / CAPABILITIES ──
             if any(k in raw_question for k in ["function", "functions", "feature", "features", "method", "methods", "capability", "capabilities", "what does", "role"]):
                 func_keywords = ["function", "feature", "built", "implemented", "designed", "pipeline", "service", "api", "model", "algorithm", "role", "responsibility", "task", "job", "about", "copilot", "engine"]
                 matched_lines = [l for l in valid_lines if any(fk in l.lower() for fk in func_keywords)]
@@ -101,27 +115,13 @@ class PureDocumentExtractiveLLM(LLM):
                             output.append(f"• **{clean_l}**" if len(clean_l) < 60 else f"• {clean_l}")
                     return "\n".join(output)
 
-            # ── 2. CONCLUSIONS / SUMMARY / OVERVIEW / MAIN POINTS ──
-            if any(k in raw_question for k in ["conclusion", "conclusions", "summary", "overview", "highlight", "highlights", "main"]):
-                output = ["### 📋 Document Summary & Key Takeaways\n"]
-                substantial_lines = [l for l in valid_lines if len(l) >= 20]
-
-                if substantial_lines:
-                    for b in substantial_lines[:8]:
-                        clean_b = self._clean_text(b.lstrip("•-* ").strip())
-                        if ":" in clean_b and not clean_b.startswith("•"):
-                            parts = clean_b.split(":", 1)
-                            output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
-                        else:
-                            output.append(f"• {clean_b}")
-                    return "\n".join(output)
-
             # ── 3. SPECIFIC KEYWORD QUERY SEARCH ──
-            query_words = [w for w in raw_question.split() if len(w) > 3 and w not in ["what", "where", "which", "there", "these", "those", "about", "from", "with", "this", "that"]]
+            stop_words = {"what", "where", "which", "there", "these", "those", "about", "from", "with", "this", "that", "does", "have", "been"}
+            query_words = [w for w in re.findall(r'\w+', raw_question) if len(w) > 2 and w not in stop_words]
             matched_lines = []
 
             for line in valid_lines:
-                if any(qw in line.lower() for qw in query_words) and len(line) >= 15:
+                if any(qw in line.lower() for qw in query_words) and len(line) >= 10:
                     matched_lines.append(line)
 
             if matched_lines:
@@ -131,10 +131,16 @@ class PureDocumentExtractiveLLM(LLM):
                     output.append(f"• {clean_l}")
                 return "\n".join(output)
 
-            # Fallback: return top substantial lines from current document context
-            substantial_lines = [self._clean_text(l.lstrip("•-* ").strip()) for l in valid_lines if len(l) >= 20][:6]
-            if substantial_lines:
-                return "### 📄 Document Overview:\n\n" + "\n".join([f"• {l}" for l in substantial_lines])
+            # ── 4. DEFAULT CONTEXT SUMMARY FALLBACK ──
+            output = ["### 📄 Document Content Details:\n"]
+            for l in valid_lines[:8]:
+                clean_l = self._clean_text(l.lstrip("•-* ").strip())
+                if ":" in clean_l and not clean_l.startswith("•"):
+                    parts = clean_l.split(":", 1)
+                    output.append(f"• **{parts[0].strip()}:** {parts[1].strip()}")
+                else:
+                    output.append(f"• {clean_l}")
+            return "\n".join(output)
 
         except Exception as e:
             logger.warning(f"[PureDocumentExtractiveLLM] Error: {e}")
