@@ -89,7 +89,7 @@ class PureDocumentExtractiveLLM(LLM):
             # ── 1. OVERVIEW / SUMMARY / ABOUT / PDF QUERIES ──
             overview_triggers = ["about", "summary", "overview", "pdf", "document", "what is this", "tell me", "explain", "details", "main", "content"]
             if any(tr in raw_question for tr in overview_triggers):
-                output = ["### 📄 Document Overview & Summary:\n"]
+                output = ["### Document Overview & Summary:\n"]
                 for l in valid_lines[:8]:
                     clean_l = self._clean_text(l.lstrip("•-* ").strip())
                     if ":" in clean_l and not clean_l.startswith("•"):
@@ -105,7 +105,7 @@ class PureDocumentExtractiveLLM(LLM):
                 matched_lines = [l for l in valid_lines if any(fk in l.lower() for fk in func_keywords)]
                 
                 if matched_lines:
-                    output = ["### ⚙️ Key Functions & Details Extracted:\n"]
+                    output = ["### Key Functions & Details Extracted:\n"]
                     for line in matched_lines[:8]:
                         clean_l = self._clean_text(line.lstrip("•-* ").strip())
                         if ":" in clean_l and not clean_l.startswith("•"):
@@ -125,14 +125,14 @@ class PureDocumentExtractiveLLM(LLM):
                     matched_lines.append(line)
 
             if matched_lines:
-                output = ["### 📌 Key Passages Matching Query:\n"]
+                output = ["### Key Passages Matching Query:\n"]
                 for line in matched_lines[:6]:
                     clean_l = self._clean_text(line.lstrip("•-* ").strip())
                     output.append(f"• {clean_l}")
                 return "\n".join(output)
 
             # ── 4. DEFAULT CONTEXT SUMMARY FALLBACK ──
-            output = ["### 📄 Document Content Details:\n"]
+            output = ["### Document Content Details:\n"]
             for l in valid_lines[:8]:
                 clean_l = self._clean_text(l.lstrip("•-* ").strip())
                 if ":" in clean_l and not clean_l.startswith("•"):
@@ -159,19 +159,13 @@ def get_llm():
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if gemini_key:
         try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            logger.info("[LLM] Initialising Google Gemini 1.5 Flash LLM Engine...")
-            _llm_instance = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
-                google_api_key=gemini_key,
-                temperature=0.0,
-                max_output_tokens=1024,
-            )
-            return _llm_instance
-        except Exception as e:
-            logger.info(f"[LLM] Using GeminiDirectLLM fallback ({e})")
+            import google.generativeai as genai
+            genai.configure(api_key=gemini_key)
+            logger.info("[LLM] Initialising Google Gemini 1.5 Flash Direct Engine...")
             _llm_instance = GeminiDirectLLM(api_key=gemini_key)
             return _llm_instance
+        except Exception as e:
+            logger.info(f"[LLM] GeminiDirectLLM fallback ({e})")
 
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
