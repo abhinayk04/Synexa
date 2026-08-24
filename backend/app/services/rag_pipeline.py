@@ -20,65 +20,60 @@ NOT_FOUND = "Information not found in documents."
 SIMILARITY_THRESHOLD = 0.08
 
 _RULES = """\
-YOU ARE SYNEXA, AN INTELLIGENT AI DOCUMENT ASSISTANT.
-Follow these guidelines carefully:
-1. For document-specific questions, answer accurately and strictly using the provided Context.
-2. For word meanings, definitions, and concepts (e.g. "what is noise", "explain impulse noise", "what does ROI mean"):
-   - First check if the concept is explained in the Context below. If so, explain it strictly using the document context!
-   - If the word is a general term or concept not explicitly defined in the context, provide a clear, helpful explanation/definition and note how it relates to the document.
-3. For general conversational greetings (hi, hello, who are you), respond warmly and naturally.
-4. MULTILINGUAL & CODE-SWITCHING SUPPORT: If the user asks in Telugu, Hindi, Telglish, Hinglish, or any regional language, reply in that SAME language!
-5. Keep responses structured, professional, and easy to read.\
+YOU ARE SYNEXA, AN ADVANCED AI DOCUMENT ASSISTANT ANSWERING QUESTIONS ABOUT AN UPLOADED FILE.
+STRICT GUIDELINES:
+1. The text under 'DOCUMENT CONTEXT' below contains the exact extracted content from the user's uploaded document/PDF.
+2. The user's document IS ALREADY ATTACHED and provided in the DOCUMENT CONTEXT section below. NEVER say "you didn't attach a PDF" or "please upload a document".
+3. For questions asking what the PDF/document/project is about or requesting a summary, synthesize a complete, detailed, structured summary using the DOCUMENT CONTEXT.
+4. For specific questions, answer accurately using the DOCUMENT CONTEXT.
+5. For conversational greetings (hi, hello), reply warmly as Synexa AI Assistant.
+6. Multilingual support: Reply in the same language as the user's question.\
 """
 
 PROMPT_TEMPLATES = {
     "simple": """\
 {rules}
 
-{history_block}Context:
+{history_block}=== DOCUMENT CONTEXT BEGIN ===
 {context}
+=== DOCUMENT CONTEXT END ===
 
-Question: {question}
+User Question: {question}
 
-Answer (concise, structured, in the same language as question):""",
+Answer (structured, complete, in the same language as user question):""",
 
     "detailed": """\
 {rules}
 
-{history_block}Context:
+{history_block}=== DOCUMENT CONTEXT BEGIN ===
 {context}
+=== DOCUMENT CONTEXT END ===
 
-Question: {question}
+User Question: {question}
 
-Detailed Answer (multi-paragraph, structured, in the same language as question):""",
+Detailed Answer (multi-paragraph, structured summary, in the same language as user question):""",
 
     "exam": """\
 {rules}
-Structure as:
-- Definition
-- Explanation
-- Example / Context Reference
 
-{history_block}Context:
+{history_block}=== DOCUMENT CONTEXT BEGIN ===
 {context}
+=== DOCUMENT CONTEXT END ===
 
-Question: {question}
+User Question: {question}
 
-Exam-Style Answer (in the same language as question):""",
+Exam-Style Answer (Definition, Explanation, Context Reference, in the same language as user question):""",
 
     "summary": """\
 {rules}
-Structure as:
-- Executive Summary
-- Top Key Highlights
-- Core Takeaways
 
-{history_block}Context:
+{history_block}=== DOCUMENT CONTEXT BEGIN ===
 {context}
+=== DOCUMENT CONTEXT END ===
 
-Question: {question}
+User Question: {question}
 
-Executive Summary Answer (in the same language as question):""",
+Executive Summary Answer (Executive Summary, Key Highlights, Core Takeaways):""",
 }
 
 
@@ -239,7 +234,6 @@ async def run_rag_pipeline(
                 all_candidates.append((doc, score))
 
     if not all_candidates:
-        # Fallback to LLM answering general questions
         llm = get_llm()
         gen_prompt = f"Answer the following question clearly and helpfully:\nQuestion: {question}"
         try:

@@ -75,14 +75,27 @@ export function ChatProvider({ children }) {
       try {
         const { getDocuments } = await import('../services/api')
         const remoteDocs = await getDocuments()
+        let deletedChatIds = new Set()
+        try {
+          deletedChatIds = new Set(JSON.parse(localStorage.getItem('synexa_deleted_chats') || '[]'))
+        } catch { /* ignore */ }
+
         if (remoteDocs && Array.isArray(remoteDocs) && remoteDocs.length > 0) {
           _setChats(prev => {
-            const existingIds = new Set(prev.map(c => c.documentId))
+            const existingDocIds = new Set(prev.map(c => c.documentId))
+            const existingChatIds = new Set(prev.map(c => c.id))
             const newChats = [...prev]
+
             for (const rd of remoteDocs) {
-              if (!existingIds.has(rd.document_id)) {
+              const targetChatId = rd.chat_id || ('chat_' + rd.document_id.slice(4))
+              if (
+                !existingDocIds.has(rd.document_id) &&
+                !existingChatIds.has(targetChatId) &&
+                !deletedChatIds.has(targetChatId) &&
+                !deletedChatIds.has(rd.document_id)
+              ) {
                 newChats.push({
-                  id: rd.chat_id || ('chat_' + rd.document_id.slice(4)),
+                  id: targetChatId,
                   title: rd.filename,
                   documentId: rd.document_id,
                   documentName: rd.filename,
@@ -188,9 +201,20 @@ export function ChatProvider({ children }) {
 
   // ── deleteChat ────────────────────────────────────────
   const deleteChat = useCallback(async (chatId) => {
+    const targetChat = chats.find(c => c.id === chatId)
     try {
-      const { deleteChat: apiDelete } = await import('../services/api')
+      const deleted = JSON.parse(localStorage.getItem('synexa_deleted_chats') || '[]')
+      if (!deleted.includes(chatId)) deleted.push(chatId)
+      if (targetChat?.documentId && !deleted.includes(targetChat.documentId)) deleted.push(targetChat.documentId)
+      localStorage.setItem('synexa_deleted_chats', JSON.stringify(deleted))
+    } catch { /* ignore */ }
+
+    try {
+      const { deleteChat: apiDelete, deleteDocument: apiDeleteDoc } = await import('../services/api')
       await apiDelete(chatId)
+      if (targetChat?.documentId) {
+        await apiDeleteDoc(targetChat.documentId).catch(() => {})
+      }
     } catch (err) {
       console.warn('[ChatContext] deleteChat backend error:', err?.response?.data?.detail || err.message)
     }
@@ -202,10 +226,18 @@ export function ChatProvider({ children }) {
       }
       return next
     })
-  }, [activeChat, _setChats, _setActiveChat])
+  }, [chats, activeChat, _setChats, _setActiveChat])
 
   // ── deleteDocument ────────────────────────────────────
   const deleteDocument = useCallback(async (documentId) => {
+    try {
+      const deleted = JSON.parse(localStorage.getItem('synexa_deleted_chats') || '[]')
+      if (!deleted.includes(documentId)) deleted.push(documentId)
+      const linkedChat = chats.find(c => c.documentId === documentId)
+      if (linkedChat && !deleted.includes(linkedChat.id)) deleted.push(linkedChat.id)
+      localStorage.setItem('synexa_deleted_chats', JSON.stringify(deleted))
+    } catch { /* ignore */ }
+
     try {
       const { deleteDocument: apiDeleteDoc } = await import('../services/api')
       await apiDeleteDoc(documentId)
@@ -220,7 +252,7 @@ export function ChatProvider({ children }) {
       }
       return next
     })
-  }, [activeChat, _setChats, _setActiveChat])
+  }, [chats, activeChat, _setChats, _setActiveChat])
 
   // ── renameChat ────────────────────────────────────────
   const renameChat = useCallback((chatId, newTitle) => {
