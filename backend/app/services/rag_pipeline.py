@@ -39,7 +39,7 @@ PROMPT_TEMPLATES = {
 
 Question: {question}
 
-Answer (from context only, in the same language as question):""",
+Answer (from context only, concise, in the same language as question):""",
 
     "detailed": """\
 {rules}
@@ -49,7 +49,7 @@ Answer (from context only, in the same language as question):""",
 
 Question: {question}
 
-Detailed Answer (from context only, in the same language as question):""",
+Detailed Answer (from context only, multi-paragraph, in the same language as question):""",
 
     "exam": """\
 {rules}
@@ -64,6 +64,20 @@ Structure as:
 Question: {question}
 
 Exam-Style Answer (from context only, in the same language as question):""",
+
+    "summary": """\
+{rules}
+Structure as:
+- Executive Summary
+- Top Key Highlights
+- Core Takeaways
+
+{history_block}Context:
+{context}
+
+Question: {question}
+
+Executive Summary Answer (from context only, in the same language as question):""",
 }
 
 
@@ -145,7 +159,6 @@ async def run_rag_pipeline(
 
     history_str = await _load_history_for_chat(resolved_chat_id) if resolved_chat_id else ""
 
-    # 1. Multilingual Query Expansion (Translates Telglish/Hinglish to English for vector matching)
     expanded_queries = generate_query_expansions(question)
     
     all_candidates: List[Tuple[Document, float]] = []
@@ -177,7 +190,6 @@ async def run_rag_pipeline(
             "highlight_text": "",
         }
 
-    # 2. Two-Stage Cross-Encoder Reranking
     reranked = rerank_documents(
         query=question,
         candidates=all_candidates,
