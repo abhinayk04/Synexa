@@ -52,33 +52,38 @@ def resolve_document_id(user_id: str, document_id: str) -> str:
     return document_id or "default"
 
 
-def _self_heal_reindex(user_id: str, document_id: str) -> bool:
-    """Finds raw source file in data/documents and builds FAISS + BM25 index on the fly if missing."""
+def find_source_file(document_id: str, document_name: Optional[str] = None) -> Optional[str]:
+    """Strictly matches source file in data/documents by document_name or exact ID prefix."""
     docs_dir = settings.DOCUMENTS_DIR
     if not os.path.exists(docs_dir):
-        return False
+        return None
 
-    target_file = None
-    clean_id = document_id.replace("doc_", "")
+    clean_id = document_id.replace("doc_", "").strip()
 
-    # Search for matching file in data/documents
+    # 1. Search by document_name if provided (e.g. "AI Intern- JD .pdf")
+    if document_name:
+        clean_name = document_name.lower().strip()
+        for root, dirs, files in os.walk(docs_dir):
+            for f in files:
+                if clean_name in f.lower() or f.lower().endswith(clean_name):
+                    return os.path.join(root, f)
+
+    # 2. Search by document_id prefix (e.g. "9ba5257d")
     for root, dirs, files in os.walk(docs_dir):
         for f in files:
-            if clean_id.lower()[:6] in f.lower() or document_id.lower() in f.lower():
-                target_file = os.path.join(root, f)
-                break
-        if target_file:
-            break
+            if clean_id.lower()[:6] in f.lower():
+                return os.path.join(root, f)
 
-    if not target_file and os.path.exists(docs_dir):
-        # Fallback to matching document by name
-        all_files = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir) if os.path.isfile(os.path.join(docs_dir, f))]
-        if all_files:
-            target_file = all_files[-1]
+    return None
+
+
+def _self_heal_reindex(user_id: str, document_id: str, document_name: Optional[str] = None) -> bool:
+    """Rebuilds FAISS + BM25 index on the fly ONLY for the exact matching source document."""
+    target_file = find_source_file(document_id, document_name)
 
     if target_file:
         try:
-            logger.info(f"[Self-Heal] Auto-reindexing '{os.path.basename(target_file)}' for doc='{document_id}'")
+            logger.info(f"[Self-Heal] Reindexing matching file '{os.path.basename(target_file)}' for doc='{document_id}'")
             from app.services.file_loader import load_document
             from app.services.chunking import chunk_documents
             from app.services.hybrid_retriever import save_bm25_index
@@ -95,7 +100,7 @@ def _self_heal_reindex(user_id: str, document_id: str) -> bool:
                 save_bm25_index(chunks, user_id=user_id, document_id=document_id)
                 return True
         except Exception as e:
-            logger.warning(f"[Self-Heal] Auto-reindex failed: {e}")
+            logger.warning(f"[Self-Heal] Auto-reindex failed for '{target_file}': {e}")
 
     return False
 
@@ -123,6 +128,7 @@ def add_documents_to_vectorstore(
 def load_vectorstore(
     user_id: str = "default",
     document_id: str = "default",
+    document_name: Optional[str] = None,
 ) -> FAISS:
     cache_key = f"{user_id}::{document_id}"
 
@@ -132,9 +138,9 @@ def load_vectorstore(
 
     index_path = find_document_index_path(user_id, document_id)
 
-    # Self-healing fallback if index was missing from disk
+    # Self-healing fallback: Re-index ONLY matching source document
     if not index_path:
-        reindexed = _self_heal_reindex(user_id, document_id)
+        reindexed = _self_heal_reindex(user_id, document_id, document_name)
         if reindexed:
             index_path = find_document_index_path(user_id, document_id)
 
