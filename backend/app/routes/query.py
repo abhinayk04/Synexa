@@ -4,8 +4,9 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from app.models.request_models import QueryRequest
 from app.models.response_models import QueryResponse, SourceDocument
-from app.services.rag_pipeline import run_rag_pipeline
+from app.services.rag_pipeline import run_rag_pipeline, stream_rag_pipeline
 from app.services.auth import get_current_user
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -15,11 +16,6 @@ router = APIRouter()
     "/ask",
     response_model=QueryResponse,
     summary="Ask a question about a document via chat_id",
-    description=(
-        "Requires JWT Bearer token. "
-        "Send chat_id (from POST /upload) to scope the query. "
-        "The backend resolves document_id and user_id from the chat record."
-    ),
     tags=["Question Answering"],
 )
 async def ask_question(
@@ -82,14 +78,9 @@ async def ask_question(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-from fastapi.responses import StreamingResponse
-from app.services.rag_pipeline import run_rag_pipeline, stream_rag_pipeline
-
-
 @router.post(
     "/ask/stream",
     summary="Ask a question with real-time SSE token streaming",
-    description="Streams answer tokens as Server-Sent Events (SSE) word-by-word with zero delay.",
     tags=["Question Answering"],
 )
 async def ask_question_stream(
@@ -190,15 +181,7 @@ async def delete_chat(
         return {"message": f"Chat '{chat_id}' deleted."}
 
 
-@router.delete(
-    "/document/{document_id}",
-    summary="Delete a document and all its data",
-    tags=["Documents"],
-)
-async def delete_document(
-    document_id: str,
-    user_id: str = Depends(get_current_user),
-):
+async def _perform_document_deletion(document_id: str, user_id: str):
     deleted = {"vectorstore": False, "document": False, "chats_deleted": 0}
 
     try:
@@ -229,3 +212,13 @@ async def delete_document(
         "message": f"Document '{document_id}' and all its data deleted.",
         "deleted": deleted,
     }
+
+
+@router.delete("/document/{document_id}", summary="Delete a document and all its data", tags=["Documents"])
+async def delete_document_singular(document_id: str, user_id: str = Depends(get_current_user)):
+    return await _perform_document_deletion(document_id, user_id)
+
+
+@router.delete("/documents/{document_id}", summary="Delete a document (plural endpoint)", tags=["Documents"])
+async def delete_document_plural(document_id: str, user_id: str = Depends(get_current_user)):
+    return await _perform_document_deletion(document_id, user_id)

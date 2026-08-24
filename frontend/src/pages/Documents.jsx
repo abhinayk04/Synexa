@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Document, Page, pdfjs } from 'react-pdf'
 import {
   FileText, ChevronLeft, ChevronRight,
-  ZoomIn, ZoomOut, X, Plus, Trash2,
+  ZoomIn, ZoomOut, X, Plus, Trash2, MessageSquare
 } from 'lucide-react'
 import { useChat } from '../context/ChatContext'
 import { uploadDocument, getToken } from '../services/api'
@@ -14,7 +14,7 @@ pdfjs.GlobalWorkerOptions.workerSrc =
 
 export default function Documents() {
   const navigate  = useNavigate()
-  const { documents, createChat, deleteDocument } = useChat()
+  const { documents, createChat, switchChat, deleteDocument, chats } = useChat()
   const fileInputRef = useRef(null)
 
   const [selected,  setSelected]  = useState(null)
@@ -32,7 +32,6 @@ export default function Documents() {
       const res = await uploadDocument(file)
       console.log('[Documents] upload response:', res)
 
-      // Pass all 6 args — fileUrl + pdfUrl survive page refresh
       createChat(
         res.chat_id,
         res.document_id,
@@ -50,7 +49,24 @@ export default function Documents() {
     }
   }
 
-  // Any record with a documentId can attempt a preview
+  const handleOpenChat = (doc) => {
+    const existing = chats.find(c => c.documentId === doc.documentId)
+    if (existing) {
+      switchChat(existing.id)
+    } else {
+      const chatId = 'chat_' + (doc.documentId ? doc.documentId.slice(4) : Math.random().toString(36).slice(2, 8))
+      createChat(
+        chatId,
+        doc.documentId,
+        doc.documentName,
+        doc.file,
+        doc.fileUrl,
+        doc.pdfUrl,
+      )
+    }
+    navigate('/chat')
+  }
+
   const hasSource = (doc) => Boolean(doc?.documentId)
 
   return (
@@ -84,9 +100,9 @@ export default function Documents() {
         </div>
 
         <div className="px-4 py-3 border-b border-white/[0.06]">
-          <h1 className="font-bold text-white text-base">Documents</h1>
+          <h1 className="font-bold text-white text-base">My Documents</h1>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            {documents.length} file{documents.length !== 1 ? 's' : ''}
+            {documents.length} file{documents.length !== 1 ? 's' : ''} available
           </p>
         </div>
 
@@ -133,23 +149,30 @@ export default function Documents() {
                   </div>
                 </button>
 
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation()
-                    if (!window.confirm(
-                      `Delete "${doc.documentName}"?\n\nThis will permanently remove:\n• The document\n• Its vectorstore\n• All chats linked to it`
-                    )) return
-                    if (selected?.documentId === doc.documentId) setSelected(null)
-                    await deleteDocument(doc.documentId)
-                  }}
-                  title="Delete document and all linked chats"
-                  className="flex-shrink-0 p-1.5 rounded-lg text-slate-700
-                             hover:text-red-400 hover:bg-red-500/10
-                             opacity-0 group-hover:opacity-100
-                             transition-all duration-150 mt-0.5"
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => handleOpenChat(doc)}
+                    title="Chat with this Document"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                  >
+                    <MessageSquare size={13} />
+                  </button>
+
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      if (!window.confirm(
+                        `Delete "${doc.documentName}"?\n\nThis will permanently remove:\n• The document\n• Its vectorstore\n• All chats linked to it`
+                      )) return
+                      if (selected?.documentId === doc.documentId) setSelected(null)
+                      await deleteDocument(doc.documentId)
+                    }}
+                    title="Delete document and all linked chats"
+                    className="p-1.5 rounded-lg text-slate-700 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -168,6 +191,7 @@ export default function Documents() {
             zoom={zoom}
             setZoom={setZoom}
             onClose={() => setSelected(null)}
+            onOpenChat={() => handleOpenChat(selected)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4
@@ -176,7 +200,7 @@ export default function Documents() {
             <div>
               <p className="text-slate-400 font-medium">Select a document to preview</p>
               <p className="text-slate-600 text-sm mt-1">
-                Choose a file from the list on the left
+                Choose a file from the list on the left to preview or chat with it
               </p>
             </div>
           </div>
@@ -188,7 +212,7 @@ export default function Documents() {
 
 function DocumentPreview({
   selected, numPages, setNumPages,
-  pageNum, setPageNum, zoom, setZoom, onClose,
+  pageNum, setPageNum, zoom, setZoom, onClose, onOpenChat,
 }) {
   const [fetchedPdfUrl, setFetchedPdfUrl] = useState(null)
   const [fetching,      setFetching]      = useState(false)
@@ -209,6 +233,7 @@ function DocumentPreview({
               ?? fetchedPdfUrl      
               ?? null
   }
+
   const needsFetch =
     needsConv &&
     !selected.pdfUrl &&
@@ -241,7 +266,6 @@ function DocumentPreview({
     })()
   }
 
-  // ── Fetching spinner ──────────────────────────────────────
   if (fetching) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-500">
@@ -252,37 +276,25 @@ function DocumentPreview({
     )
   }
 
-  // ── No source available ───────────────────────────────────
-  if (!fileSource) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3
-                      text-center px-8">
-        <p className="text-red-400 text-sm font-medium">Preview unavailable</p>
-        <p className="text-slate-500 text-xs leading-relaxed max-w-sm">
-          {fetchError
-            ? fetchError
-            : isPdf
-              ? 'Re-upload the file to restore the preview.'
-              : 'This document was not converted to PDF at upload time. ' +
-                'Ensure reportlab (TXT) or LibreOffice (DOCX) is installed ' +
-                'on the server, then re-upload the file.'}
-        </p>
-        <p className="text-slate-600 text-xs">RAG chat still works normally.</p>
-      </div>
-    )
-  }
-
-  // ── Toolbar + viewer ──────────────────────────────────────
   return (
     <>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]
                       bg-[#0F172A] flex-shrink-0">
-        <p className="text-sm font-medium text-slate-200 truncate max-w-xs">
-          {selected.documentName}
-        </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-medium text-slate-200 truncate max-w-xs">
+            {selected.documentName}
+          </p>
+          <button
+            onClick={onOpenChat}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500
+                       text-white text-xs font-medium transition-all shadow-md shadow-blue-900/30"
+          >
+            <MessageSquare size={13} /> Chat with this Document
+          </button>
+        </div>
 
+        <div className="flex items-center gap-2">
           {/* Zoom */}
           <button
             onClick={() => setZoom(z => Math.max(0.5, +(z - 0.1).toFixed(2)))}
@@ -339,11 +351,8 @@ function DocumentPreview({
         </div>
       </div>
 
-      {/* Viewer — one page at a time, scrolls to top on page change */}
-      <div className="flex-1 overflow-y-auto bg-[#0B1222] flex flex-col
-                      items-center py-6 gap-3">
-
-        {/* Per-page render spinner */}
+      {/* Viewer */}
+      <div className="flex-1 overflow-y-auto bg-[#0B1222] flex flex-col items-center py-6 gap-3">
         {pageLoading && (
           <div className="flex items-center gap-2 text-slate-500 text-xs">
             <div className="w-4 h-4 border-2 border-slate-600 border-t-blue-400
@@ -352,40 +361,57 @@ function DocumentPreview({
           </div>
         )}
 
-        <Document
-          file={fileSource}
-          onLoadSuccess={({ numPages: n }) => {
-            setNumPages(n)
-            setPageNum(p => Math.min(p, n))
-          }}
-          loading={<p className="text-slate-500 text-sm mt-12">Loading…</p>}
-          error={
-            <div className="flex flex-col items-center gap-2 mt-12 text-center px-8">
-              <p className="text-red-400 text-sm font-medium">Failed to render document.</p>
-              <p className="text-slate-500 text-xs max-w-xs leading-relaxed">
-                {isPdf
-                  ? 'The PDF may be corrupted. Try re-uploading.'
-                  : 'The converted PDF could not be rendered. Re-upload the file.'}
-              </p>
+        {fileSource ? (
+          <Document
+            file={fileSource}
+            onLoadSuccess={({ numPages: n }) => {
+              setNumPages(n)
+              setPageNum(p => Math.min(p, n))
+            }}
+            loading={<p className="text-slate-500 text-sm mt-12">Loading…</p>}
+            error={
+              <div className="flex flex-col items-center gap-2 mt-12 text-center px-8">
+                <p className="text-red-400 text-sm font-medium">Failed to render document preview.</p>
+                <p className="text-slate-500 text-xs max-w-xs leading-relaxed">
+                  RAG chat still works normally for this document.
+                </p>
+                <button
+                  onClick={onOpenChat}
+                  className="mt-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium"
+                >
+                  Start Chat Session
+                </button>
+              </div>
+            }
+          >
+            <div className="shadow-xl shadow-black/40">
+              <Page
+                key={`preview-page-${pageNum}`}
+                pageNumber={pageNum}
+                scale={zoom}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+                onRenderSuccess={() => setPageLoading(false)}
+                onRenderError={()  => setPageLoading(false)}
+                loading={() => { setPageLoading(true); return null }}
+              />
             </div>
-          }
-        >
-          {/* ── SINGLE PAGE — replaces Array.from(...).map(p => <Page />) ── */}
-          <div className="shadow-xl shadow-black/40">
-            <Page
-              key={`preview-page-${pageNum}`}
-              pageNumber={pageNum}
-              scale={zoom}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-              onRenderSuccess={() => setPageLoading(false)}
-              onRenderError={()  => setPageLoading(false)}
-              loading={() => { setPageLoading(true); return null }}
-            />
+          </Document>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8 mt-16">
+            <p className="text-slate-300 text-sm font-medium">{selected.documentName}</p>
+            <p className="text-slate-500 text-xs max-w-sm">
+              Document indexed and ready for AI search & question answering.
+            </p>
+            <button
+              onClick={onOpenChat}
+              className="mt-3 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-2"
+            >
+              <MessageSquare size={14} /> Chat with this Document
+            </button>
           </div>
-        </Document>
+        )}
 
-        {/* Bottom page nav */}
         {numPages && numPages > 1 && (
           <div className="flex items-center gap-3 py-2">
             <button
@@ -411,7 +437,6 @@ function DocumentPreview({
             </button>
           </div>
         )}
-
       </div>
     </>
   )

@@ -170,12 +170,17 @@ export async function getUserChats() {
 }
 
 export async function getChatHistory(chatId) {
-  const response = await api.get(`/chat/${chatId}`)
+  const response = await api.get(`/chat/${encodeURIComponent(chatId)}/history`)
+  return response.data
+}
+
+export async function deleteChat(chatId) {
+  const response = await api.delete(`/chat/${encodeURIComponent(chatId)}`)
   return response.data
 }
 
 export async function deleteDocument(documentId) {
-  const response = await api.delete(`/documents/${documentId}`)
+  const response = await api.delete(`/document/${encodeURIComponent(documentId)}`)
   return response.data
 }
 
