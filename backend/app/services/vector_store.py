@@ -85,7 +85,6 @@ def load_vectorstore(
     document_id = resolve_document_id(user_id, document_id)
     cache_key = f"{user_id}::{document_id}"
 
-    # 1. Return from In-Memory RAM Cache if available (< 1ms)
     if cache_key in _vectorstore_cache:
         logger.info(f"[VS Cache Hit] Returning in-memory FAISS index user='{user_id}' doc='{document_id}'")
         return _vectorstore_cache[cache_key]
@@ -115,6 +114,32 @@ def load_vectorstore(
     _vectorstore_cache[cache_key] = store
     logger.info(f"[VS Cache Miss] Loaded index into RAM user='{user_id}' doc='{document_id}'")
     return store
+
+
+def load_all_user_vectorstores(user_id: str = "default") -> List[Tuple[str, FAISS]]:
+    """Load all vectorstore indexes belonging to the user for multi-document RAG search."""
+    stores: List[Tuple[str, FAISS]] = []
+    
+    # 1. Search user directory
+    user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
+    if os.path.isdir(user_dir):
+        for entry in os.scandir(user_dir):
+            if entry.is_dir() and _index_exists(user_id, entry.name):
+                try:
+                    store = load_vectorstore(user_id=user_id, document_id=entry.name)
+                    stores.append((entry.name, store))
+                except Exception as e:
+                    logger.warning(f"[VS] Failed loading user index '{entry.name}': {e}")
+
+    # 2. Check default/flat index if empty
+    if not stores and _flat_index_exists():
+        try:
+            store = load_vectorstore(user_id="default", document_id="__flat__")
+            stores.append(("__flat__", store))
+        except Exception:
+            pass
+
+    return stores
 
 
 def delete_document_index(user_id: str, document_id: str) -> bool:

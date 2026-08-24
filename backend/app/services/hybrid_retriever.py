@@ -6,9 +6,8 @@ from typing import List, Tuple, Dict, Any
 from rank_bm25 import BM25Okapi
 from langchain_core.documents import Document
 
-
 from app.config import settings
-from app.services.vector_store import load_vectorstore
+from app.services.vector_store import load_vectorstore, load_all_user_vectorstores
 
 logger = logging.getLogger(__name__)
 
@@ -50,38 +49,47 @@ def search_bm25(
     document_id: str,
     top_k: int = 10,
 ) -> List[Tuple[Document, float]]:
-    """Query BM25 index for sparse keyword matches."""
-    file_path = _bm25_path(user_id, document_id)
-    if not os.path.exists(file_path):
-        logger.warning(f"[BM25] Index file not found: '{file_path}'")
+    """Query BM25 index for sparse keyword matches across all user documents."""
+    results: List[Tuple[Document, float]] = []
+    
+    # 1. Collect all BM25 indices for user
+    user_dir = os.path.join(settings.VECTORSTORE_DIR, user_id)
+    target_paths = []
+    
+    if document_id and os.path.exists(_bm25_path(user_id, document_id)):
+        target_paths.append(_bm25_path(user_id, document_id))
+
+    if os.path.isdir(user_dir):
+        for entry in os.scandir(user_dir):
+            if entry.is_dir():
+                bp = os.path.join(entry.path, "bm25.pkl")
+                if os.path.exists(bp) and bp not in target_paths:
+                    target_paths.append(bp)
+
+    tokenized_query = _tokenize(query)
+    if not tokenized_query:
         return []
 
-    try:
-        with open(file_path, "rb") as f:
-            data = pickle.load(f)
+    for file_path in target_paths:
+        try:
+            with open(file_path, "rb") as f:
+                data = pickle.load(f)
 
-        bm25: BM25Okapi = data["bm25"]
-        chunks: List[Document] = data["chunks"]
+            bm25: BM25Okapi = data["bm25"]
+            chunks: List[Document] = data["chunks"]
 
-        tokenized_query = _tokenize(query)
-        if not tokenized_query:
-            return []
+            scores = bm25.get_scores(tokenized_query)
+            top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
 
-        scores = bm25.get_scores(tokenized_query)
-        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+            for idx in top_indices:
+                score = float(scores[idx])
+                if score > 0:
+                    results.append((chunks[idx], score))
+        except Exception as e:
+            logger.warning(f"[BM25] Search failed on '{file_path}': {e}")
 
-        results = []
-        for idx in top_indices:
-            score = float(scores[idx])
-            if score > 0:
-                results.append((chunks[idx], score))
-
-        logger.info(f"[BM25] Retrived {len(results)} matches for query '{query[:30]}'")
-        return results
-
-    except Exception as e:
-        logger.error(f"[BM25] Search failed: {e}", exc_info=True)
-        return []
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results[:top_k]
 
 
 def reciprocal_rank_fusion(
@@ -92,34 +100,28 @@ def reciprocal_rank_fusion(
 ) -> List[Tuple[Document, float]]:
     """
     Reciprocal Rank Fusion (RRF) algorithm to combine Dense (FAISS) and Sparse (BM25) ranks.
-    Formula: RRF_score(doc) = sum(1 / (rrf_k + rank_m(doc)))
     """
     rrf_scores: Dict[str, float] = {}
     doc_map: Dict[str, Document] = {}
 
-    # Helper to create unique key for deduplication
     def _doc_key(doc: Document) -> str:
         content = doc.page_content.strip()
         doc_id = doc.metadata.get("chunk_id", content[:100])
         return f"{doc.metadata.get('document_name', '')}::{doc_id}"
 
-    # Process Dense Results
     for rank, (doc, score) in enumerate(dense_results, start=1):
         key = _doc_key(doc)
         doc_map[key] = doc
         rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
 
-    # Process Sparse Results
     for rank, (doc, score) in enumerate(sparse_results, start=1):
         key = _doc_key(doc)
         if key not in doc_map:
             doc_map[key] = doc
         rrf_scores[key] = rrf_scores.get(key, 0.0) + (1.0 / (rrf_k + rank))
 
-    # Sort candidates by combined RRF score
     sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)[:top_k]
 
-    # Normalize RRF scores relative to theoretical maximum (2 / (rrf_k + 1))
     max_possible_rrf = 2.0 / (rrf_k + 1)
     
     fused_results = []
@@ -138,24 +140,33 @@ def hybrid_retrieve(
     top_k: int = 7,
 ) -> List[Tuple[Document, float]]:
     """
-    Execute Hybrid Dense (FAISS) + Sparse (BM25) search with Reciprocal Rank Fusion.
+    Execute Hybrid Dense (FAISS) + Sparse (BM25) search across ALL uploaded documents of the user.
     """
-    # 1. Dense retrieval via FAISS
     dense_results: List[Tuple[Document, float]] = []
-    try:
-        store = load_vectorstore(user_id=user_id, document_id=document_id)
-        docs_and_scores = store.similarity_search_with_score(query, k=top_k * 2)
-        # FAISS returns L2 distance (lower is better), convert to similarity score 1/(1+dist)
-        for doc, score in docs_and_scores:
-            sim = 1.0 / (1.0 + float(score))
-            dense_results.append((doc, sim))
-    except Exception as e:
-        logger.warning(f"[Hybrid] Dense FAISS retrieval failed: {e}")
+    
+    # 1. Load all user vectorstores for multi-document search
+    user_stores = load_all_user_vectorstores(user_id=user_id)
+    if not user_stores and document_id:
+        try:
+            store = load_vectorstore(user_id=user_id, document_id=document_id)
+            user_stores = [(document_id, store)]
+        except Exception:
+            pass
 
-    # 2. Sparse retrieval via BM25
+    for doc_name, store in user_stores:
+        try:
+            docs_and_scores = store.similarity_search_with_score(query, k=top_k * 2)
+            for doc, score in docs_and_scores:
+                sim = 1.0 / (1.0 + float(score))
+                dense_results.append((doc, sim))
+        except Exception as e:
+            logger.warning(f"[Hybrid] Search failed on index '{doc_name}': {e}")
+
+    dense_results.sort(key=lambda x: x[1], reverse=True)
+
+    # 2. Sparse retrieval via BM25 across all documents
     sparse_results = search_bm25(query, user_id=user_id, document_id=document_id, top_k=top_k * 2)
 
-    # Fallback logic if one search mode is unavailable
     if not dense_results and not sparse_results:
         logger.warning("[Hybrid] Both dense and sparse search returned 0 results.")
         return []
