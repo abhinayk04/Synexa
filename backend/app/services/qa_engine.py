@@ -10,24 +10,43 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiDirectLLM(LLM):
-    """Direct Google Gemini 1.5 Flash LLM Integration."""
+    """Direct Google Gemini LLM Integration with google.genai SDK."""
     api_key: str
 
     @property
     def _llm_type(self) -> str:
-        return "google_gemini_1.5_flash"
+        return "google_gemini_flash"
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
+        # 1. Try official google.genai Client SDK
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            if response and response.text:
-                return response.text.strip()
+            from google import genai
+            client = genai.Client(api_key=self.api_key)
+            for m in ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+                try:
+                    res = client.models.generate_content(model=m, contents=prompt)
+                    if res and res.text:
+                        return res.text.strip()
+                except Exception as inner_e:
+                    logger.info(f"[GeminiDirectLLM] Model '{m}' failed: {inner_e}")
         except Exception as e:
-            logger.warning(f"[GeminiDirectLLM] Direct API call warning: {e}")
-        
+            logger.warning(f"[GeminiDirectLLM] google.genai Client warning: {e}")
+
+        # 2. Try legacy google.generativeai SDK fallback
+        try:
+            import google.generativeai as genai_legacy
+            genai_legacy.configure(api_key=self.api_key)
+            for m in ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+                try:
+                    mod = genai_legacy.GenerativeModel(m)
+                    res = mod.generate_content(prompt)
+                    if res and res.text:
+                        return res.text.strip()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"[GeminiDirectLLM] Legacy SDK warning: {e}")
+
         fallback = PureDocumentExtractiveLLM()
         return fallback._call(prompt)
 
@@ -36,8 +55,7 @@ class PureDocumentExtractiveLLM(LLM):
     """
     Strict 100% Document-Grounded Extractive RAG Engine.
     Exclusively parses, filters, and formats text from the CURRENT UPLOADED DOCUMENT context.
-    - Zero hardcoded resume, project, or domain text.
-    - Normalizes PDF line breaks and word spacing.
+    - Normalizes PDF kerning and word spacing.
     - Dynamically matches question intent against document passages.
     """
 
@@ -48,13 +66,15 @@ class PureDocumentExtractiveLLM(LLM):
     def _clean_text(self, text: str) -> str:
         if not text:
             return ""
-        cleaned = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
-        cleaned = re.sub(r'([a-zA-Z])(\d+)', r'\1 \2', cleaned)
-        cleaned = re.sub(r'(\d+)([a-zA-Z])', r'\1 \2', cleaned)
-        cleaned = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', cleaned)
-        cleaned = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', cleaned)
-        cleaned = re.sub(r'[ \t]+', ' ', cleaned)
-        return cleaned.strip()
+        # Collapse spaced-out kerning letters (e.g. 'A R T I F I C I A L' -> 'ARTIFICIAL')
+        text = re.sub(r'(?:(?<=\s)|(?<=^))(?:[A-Za-z]\s+){2,}[A-Za-z](?=\s|$)', lambda m: m.group(0).replace(" ", ""), text)
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+        text = re.sub(r'([a-zA-Z])(\d+)', r'\1 \2', text)
+        text = re.sub(r'(\d+)([a-zA-Z])', r'\1 \2', text)
+        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+        text = re.sub(r'(\w+)-\s+(\w+)', r'\1\2', text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        return text.strip()
 
     def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
         if "Context:" not in prompt or "Question:" not in prompt:
@@ -78,16 +98,17 @@ class PureDocumentExtractiveLLM(LLM):
             seen_lines = set()
             valid_lines = []
             for line in raw_lines:
-                line_lower = line.lower()
-                if line_lower not in seen_lines and len(line) >= 8:
+                clean_l = self._clean_text(line)
+                line_lower = clean_l.lower()
+                if line_lower not in seen_lines and len(clean_l) >= 8:
                     seen_lines.add(line_lower)
-                    valid_lines.append(line)
+                    valid_lines.append(clean_l)
 
             if not valid_lines:
                 return "Information not found in documents."
 
-            # ── 1. OVERVIEW / SUMMARY / ABOUT / PDF QUERIES ──
-            overview_triggers = ["about", "summary", "overview", "pdf", "document", "what is this", "tell me", "explain", "details", "main", "content"]
+            # ── 1. OVERVIEW / SUMMARY / ABOUT / PROJECT / PDF QUERIES ──
+            overview_triggers = ["about", "summary", "overview", "pdf", "document", "project", "lab", "manual", "what is this", "tell me", "explain", "details", "main", "content"]
             if any(tr in raw_question for tr in overview_triggers):
                 output = ["### Document Overview & Summary:\n"]
                 for l in valid_lines[:8]:
@@ -158,14 +179,9 @@ def get_llm():
 
     gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if gemini_key:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            logger.info("[LLM] Initialising Google Gemini 1.5 Flash Direct Engine...")
-            _llm_instance = GeminiDirectLLM(api_key=gemini_key)
-            return _llm_instance
-        except Exception as e:
-            logger.info(f"[LLM] GeminiDirectLLM fallback ({e})")
+        logger.info("[LLM] Initialising Google Gemini 3.6 Flash Direct Engine...")
+        _llm_instance = GeminiDirectLLM(api_key=gemini_key)
+        return _llm_instance
 
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
